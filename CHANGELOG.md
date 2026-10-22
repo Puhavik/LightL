@@ -8,7 +8,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ### Added
 - **Live Streaming Translation (SSE)**: Asynchronous Server-Sent Events stream translations token-by-token directly into the floating popover with zero perceptible delay.
-- **Support for Next-Gen Gemini Models**: Added support for Gemini 2.5, 3.8, and Gemini 4 Argon models with automatic reasoning/thinking token suppression for ultra-fast response.
+- **Support for Next-Gen Gemini Models**: Added support for Gemini 3.5 Flash-Lite, 3.6 Flash, 3.8 Flash, Gemini Flash (Latest alias), and Gemini 4 Argon models with automatic reasoning/thinking token suppression for ultra-fast response.
 - **Smart Popover Positioning**: Dynamic multi-monitor awareness that adapts to cursor bounds, screen edges, menu bar, and dock, preventing off-screen popover placement across complex display setups.
 - **Comprehensive Swift Testing Suite**: 45 automated unit tests covering API streaming, prompt injection protection, Keychain lifecycle, coordinate transformations, and hotkey conflict detection.
 - **Automated Notarization & Hardened Runtime**: CI/CD pipeline integrated with Apple `notarytool`, Developer ID signing, and security entitlements.
