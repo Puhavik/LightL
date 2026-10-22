@@ -3,7 +3,7 @@ import AppKit
 
 extension NSImage {
     /// Authentic LightL application icon (multi-resolution AppIcon.icns / AppIcon_1024.png).
-    public static let appIcon: NSImage = {
+    public static var appIcon: NSImage {
         // 1. Try Bundle.main (when running inside .app bundle)
         if let img = Bundle.main.image(forResource: "AppIcon") {
             return img
@@ -44,5 +44,5 @@ extension NSImage {
         }
 
         return NSImage()
-    }()
+    }
 }

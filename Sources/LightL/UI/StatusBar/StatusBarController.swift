@@ -125,10 +125,6 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    isolated deinit {
-        destroy()
-    }
-
     public func rebuildMenu() {
         guard !isMenuVisible else { return }
         let menu = statusItem?.menu ?? NSMenu()
