@@ -103,7 +103,8 @@ struct LightLTests {
     @Test("GeminiModelOption list and default model")
     func geminiModelsTests() {
         #expect(GeminiModelOption.defaultModel.modelId == "gemini-3.5-flash-lite")
-        #expect(GeminiModelOption.availableModels.count >= 4)
+        #expect(GeminiModelOption.availableModels.count >= 5)
+        #expect(GeminiModelOption.availableModels.contains(where: { $0.modelId == "gemini-2.5-flash" }))
         #expect(GeminiModelOption.availableModels.contains(where: { $0.modelId == "gemini-3.8-flash" }))
     }
 
@@ -980,13 +981,19 @@ struct LightLTests {
 
     @Test("GeminiModelOption and GeminiService.supportsThinking for argon and gemini-4")
     func geminiModelOptionAndSupportsThinking() {
-        // 1. GeminiModelOption contains gemini-4-argon
+        // 1. GeminiModelOption contains gemini-4-argon and gemini-2.5-flash
         let argonOption = GeminiModelOption.availableModels.first(where: { $0.modelId == "gemini-4-argon" })
         #expect(argonOption != nil)
         #expect(argonOption?.modelId == "gemini-4-argon")
         #expect(argonOption?.id == "gemini-4-argon")
         #expect(argonOption?.localizedDisplayName == "Gemini 4 Argon")
         #expect(!argonOption!.localizedDescription.isEmpty)
+
+        let flash25Option = GeminiModelOption.availableModels.first(where: { $0.modelId == "gemini-2.5-flash" })
+        #expect(flash25Option != nil)
+        #expect(flash25Option?.modelId == "gemini-2.5-flash")
+        #expect(flash25Option?.localizedDisplayName == "Gemini 2.5 Flash")
+        #expect(!flash25Option!.localizedDescription.isEmpty)
 
         // 2. GeminiService.supportsThinking returns true for argon and gemini-4 models
         #expect(GeminiService.supportsThinking(cleanModel: "gemini-4-argon"))

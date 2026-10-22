@@ -191,7 +191,7 @@ public actor GeminiService {
         }
 
         // Bounded maxOutputTokens prevents runaway generation and limits token cost
-        let maxTokens = max(128, min(4096, (prompt.count * 3) / 2 + 100))
+        let maxTokens = max(2048, min(8192, prompt.count * 4 + 1024))
         var generationConfig: [String: Any] = [
             "temperature": temperature,
             "maxOutputTokens": maxTokens
@@ -205,15 +205,42 @@ public actor GeminiService {
         }
 
         if let onChunk = onChunk {
-            return try await executeStreamGenerate(
-                url: url,
+            do {
+                let streamResult = try await executeStreamGenerate(
+                    url: url,
+                    prompt: prompt,
+                    systemInstruction: systemInstruction,
+                    apiKey: apiKey,
+                    generationConfig: generationConfig,
+                    onChunk: onChunk,
+                    canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil
+                )
+                let trimmed = streamResult.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    return trimmed
+                }
+            } catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                    throw CancellationError()
+                }
+                // Fallback to non-streaming generateContent on streaming error
+            }
+
+            // Fallback non-streaming generateContent
+            let nonStreamUrlString = "https://generativelanguage.googleapis.com/v1beta/models/\(encodedModel):generateContent"
+            guard let nonStreamUrl = URL(string: nonStreamUrlString) else {
+                throw GeminiError.invalidURL
+            }
+            let nonStreamResult = try await executeGenerate(
+                url: nonStreamUrl,
                 prompt: prompt,
                 systemInstruction: systemInstruction,
                 apiKey: apiKey,
                 generationConfig: generationConfig,
-                onChunk: onChunk,
                 canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil
             )
+            onChunk(nonStreamResult)
+            return nonStreamResult
         } else {
             return try await executeGenerate(
                 url: url,
@@ -231,11 +258,15 @@ public actor GeminiService {
         apiKey: String,
         prompt: String,
         systemInstruction: String,
-        generationConfig: [String: Any]
+        generationConfig: [String: Any],
+        isStreaming: Bool = false
     ) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
+        if isStreaming {
+            request.addValue("text/event-stream", forHTTPHeaderField: "Accept")
+        }
         let sanitizedApiKey = Self.sanitizeApiKey(apiKey)
         request.addValue(sanitizedApiKey, forHTTPHeaderField: "x-goog-api-key")
 
@@ -283,7 +314,8 @@ public actor GeminiService {
             apiKey: apiKey,
             prompt: prompt,
             systemInstruction: systemInstruction,
-            generationConfig: generationConfig
+            generationConfig: generationConfig,
+            isStreaming: true
         )
 
         let (asyncBytes, response): (URLSession.AsyncBytes, URLResponse)
@@ -379,9 +411,6 @@ public actor GeminiService {
         }
 
         let trimmedResult = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedResult.isEmpty else {
-            throw GeminiError.emptyResponse
-        }
         return trimmedResult
     }
 
@@ -398,7 +427,8 @@ public actor GeminiService {
             apiKey: apiKey,
             prompt: prompt,
             systemInstruction: systemInstruction,
-            generationConfig: generationConfig
+            generationConfig: generationConfig,
+            isStreaming: false
         )
 
         let (data, response): (Data, URLResponse)
@@ -493,15 +523,24 @@ public actor GeminiService {
             throw GeminiError.badServerResponse(statusCode: err.error?.code ?? 500, message: msg)
         }
 
-        guard let chunk = try? JSONDecoder().decode(GeminiResponseDTO.self, from: data) else {
+        let candidatesList: [GeminiResponseDTO.Candidate]
+        let promptFeedback: GeminiResponseDTO.PromptFeedback?
+
+        if let singleChunk = try? JSONDecoder().decode(GeminiResponseDTO.self, from: data) {
+            candidatesList = singleChunk.candidates ?? []
+            promptFeedback = singleChunk.promptFeedback
+        } else if let arrayChunk = try? JSONDecoder().decode([GeminiResponseDTO].self, from: data) {
+            candidatesList = arrayChunk.flatMap { $0.candidates ?? [] }
+            promptFeedback = arrayChunk.compactMap { $0.promptFeedback }.first
+        } else {
             return
         }
 
-        if let blockReason = chunk.promptFeedback?.blockReason {
+        if let blockReason = promptFeedback?.blockReason {
             throw GeminiError.decodingError(L10n.tr(ru: "Запрос заблокирован Gemini (причина: \(blockReason)).", en: "Request blocked by Gemini (reason: \(blockReason))."))
         }
 
-        if let candidate = chunk.candidates?.first {
+        for candidate in candidatesList {
             let parts = candidate.content?.parts ?? []
             if let finish = candidate.finishReason {
                 if finish == "SAFETY" {
@@ -564,7 +603,12 @@ public actor GeminiService {
     }
 
     public static func parseResponseData(_ data: Data) throws -> String {
-        guard let response = try? JSONDecoder().decode(GeminiResponseDTO.self, from: data) else {
+        let response: GeminiResponseDTO
+        if let single = try? JSONDecoder().decode(GeminiResponseDTO.self, from: data) {
+            response = single
+        } else if let array = try? JSONDecoder().decode([GeminiResponseDTO].self, from: data), let first = array.first {
+            response = first
+        } else {
             throw GeminiError.decodingError(L10n.tr(ru: "Не удалось распарсить JSON ответ сервера.", en: "Failed to parse server JSON response."))
         }
 

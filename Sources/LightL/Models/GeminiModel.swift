@@ -10,6 +10,8 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
 
     public var localizedDisplayName: String {
         switch modelId {
+        case "gemini-2.5-flash":
+            return "Gemini 2.5 Flash"
         case "gemini-3.5-flash-lite":
             return L10n.tr(ru: "Gemini 3.5 Flash-Lite (Рекомендуется)", en: "Gemini 3.5 Flash-Lite (Recommended)")
         case "gemini-3.8-flash":
@@ -27,6 +29,11 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
 
     public var localizedDescription: String {
         switch modelId {
+        case "gemini-2.5-flash":
+            return L10n.tr(
+                ru: "Флагманская быстрая модель Gemini 2.5 с адаптивным мышлением (режим thinking отключен для мгновенного перевода).",
+                en: "Flagship fast Gemini 2.5 model with adaptive reasoning (thinking mode disabled for instant translation)."
+            )
         case "gemini-3.5-flash-lite":
             return L10n.tr(
                 ru: "Сверхбыстрая легковесная модель без рассуждений (thinking). Мгновенный перевод за ~200-400мс.",
@@ -58,6 +65,7 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
     }
 
     public static let availableModels: [GeminiModelOption] = [
+        GeminiModelOption(modelId: "gemini-2.5-flash"),
         GeminiModelOption(modelId: "gemini-3.5-flash-lite"),
         GeminiModelOption(modelId: "gemini-3.8-flash"),
         GeminiModelOption(modelId: "gemini-3.6-flash"),
@@ -65,5 +73,5 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
         GeminiModelOption(modelId: "gemini-4-argon")
     ]
 
-    public static let defaultModel = availableModels[0] // gemini-3.5-flash-lite
+    public static let defaultModel = availableModels[1] // gemini-3.5-flash-lite
 }
