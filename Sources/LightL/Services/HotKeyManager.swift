@@ -3,28 +3,32 @@ import AppKit
 import Carbon
 import os
 
-private final class DoubleTapTracker: @unchecked Sendable {
-    private var lastTime: UInt64 = 0
-    private let intervalNanoseconds: UInt64 = 380_000_000 // 380ms
-    private var lock = os_unfair_lock()
+final class DoubleTapTracker: Sendable {
+    private let state = OSAllocatedUnfairLock<UInt64>(initialState: 0)
+    let intervalNanoseconds: UInt64
 
-    func reset() {
-        os_unfair_lock_lock(&lock)
-        lastTime = 0
-        os_unfair_lock_unlock(&lock)
+    init(intervalNanoseconds: UInt64 = 380_000_000) {
+        self.intervalNanoseconds = intervalNanoseconds
     }
 
-    func recordAndCheckDoubleTap() -> Bool {
-        os_unfair_lock_lock(&lock)
-        defer { os_unfair_lock_unlock(&lock) }
-        let now = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)
-        let diff = now - lastTime
-        if lastTime != 0 && diff <= intervalNanoseconds {
-            lastTime = 0
-            return true
-        } else {
-            lastTime = now
-            return false
+    func reset() {
+        state.withLock { $0 = 0 }
+    }
+
+    func recordAndCheckDoubleTap(now: UInt64 = clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) -> Bool {
+        state.withLock { lastTime in
+            guard now >= lastTime else {
+                lastTime = now
+                return false
+            }
+            let diff = now - lastTime
+            if lastTime != 0 && diff <= intervalNanoseconds {
+                lastTime = 0
+                return true
+            } else {
+                lastTime = now
+                return false
+            }
         }
     }
 }
@@ -47,18 +51,20 @@ public final class HotKeyManager {
         installCarbonEventHandler()
     }
 
+    @discardableResult
     public func updateHotKeys(
         translateShortcut: ShortcutModel,
         rewriteShortcut: ShortcutModel,
         enableDoubleCmdC: Bool
-    ) {
+    ) -> (translateSuccess: Bool, rewriteSuccess: Bool) {
         unregisterAll()
-        registerTranslate(shortcut: translateShortcut)
-        registerRewrite(shortcut: rewriteShortcut)
+        let translateSuccess = registerTranslate(shortcut: translateShortcut)
+        let rewriteSuccess = registerRewrite(shortcut: rewriteShortcut)
         setupDoubleCmdCMonitor(enabled: enableDoubleCmdC)
+        return (translateSuccess, rewriteSuccess)
     }
 
-    private func registerTranslate(shortcut: ShortcutModel) {
+    private func registerTranslate(shortcut: ShortcutModel) -> Bool {
         let hotKeyID = EventHotKeyID(signature: OSType(0x4C54_5231), id: 1) // "LTR1"
         let status = RegisterEventHotKey(
             shortcut.keyCode,
@@ -68,12 +74,15 @@ public final class HotKeyManager {
             0,
             &translateHotKeyRef
         )
-        if status != noErr {
-            print("[HotKeyManager] Failed to register translate hotkey: \(status)")
+        if status == -9878 /* eventHotKeyExistsErr */ {
+            print("[HotKeyManager] Warning: translate hotkey already registered by another application (eventHotKeyExistsErr -9878), keyCode: \(shortcut.keyCode)")
+        } else if status != noErr {
+            print("[HotKeyManager] Failed to register translate hotkey: \(status), keyCode: \(shortcut.keyCode)")
         }
+        return status == noErr
     }
 
-    private func registerRewrite(shortcut: ShortcutModel) {
+    private func registerRewrite(shortcut: ShortcutModel) -> Bool {
         let hotKeyID = EventHotKeyID(signature: OSType(0x4C54_5232), id: 2) // "LTR2"
         let status = RegisterEventHotKey(
             shortcut.keyCode,
@@ -83,9 +92,12 @@ public final class HotKeyManager {
             0,
             &rewriteHotKeyRef
         )
-        if status != noErr {
-            print("[HotKeyManager] Failed to register rewrite hotkey: \(status)")
+        if status == -9878 /* eventHotKeyExistsErr */ {
+            print("[HotKeyManager] Warning: rewrite hotkey already registered by another application (eventHotKeyExistsErr -9878), keyCode: \(shortcut.keyCode)")
+        } else if status != noErr {
+            print("[HotKeyManager] Failed to register rewrite hotkey: \(status), keyCode: \(shortcut.keyCode)")
         }
+        return status == noErr
     }
 
     private func unregisterAll() {
@@ -116,9 +128,11 @@ public final class HotKeyManager {
             guard err == noErr else { return noErr }
 
             Task { @MainActor in
-                if hotKeyID.id == 1 {
+                let isTranslate = hotKeyID.signature == OSType(0x4C54_5231) && hotKeyID.id == 1
+                let isRewrite = hotKeyID.signature == OSType(0x4C54_5232) && hotKeyID.id == 2
+                if isTranslate {
                     HotKeyManager.shared.onTranslate?()
-                } else if hotKeyID.id == 2 {
+                } else if isRewrite {
                     HotKeyManager.shared.onRewrite?()
                 }
             }
@@ -126,6 +140,10 @@ public final class HotKeyManager {
         }
 
         InstallEventHandler(GetApplicationEventTarget(), callback, 1, &eventType, nil, &eventHandlerRef)
+    }
+
+    public func recheckDoubleCmdCMonitor() {
+        setupDoubleCmdCMonitor(enabled: AppSettings.shared.doubleCmdCEnabled)
     }
 
     private func setupDoubleCmdCMonitor(enabled: Bool) {
@@ -138,8 +156,12 @@ public final class HotKeyManager {
 
         let tracker = doubleTapTracker
         // Zero-allocation filter: ignores all non-Cmd+C keys immediately without creating Tasks
+        // Checks explicitly for [.command, .shift, .control, .option] so CapsLock does not break Cmd+C
         globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            let isCmdOnly = event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command
+            if event.cgEvent?.getIntegerValueField(.eventSourceUserData) == 0x4C54_4C59 { return }
+            guard !event.isARepeat else { return }
+
+            let isCmdOnly = event.modifierFlags.intersection([.command, .shift, .control, .option]) == .command
             let isC = event.keyCode == UInt16(kVK_ANSI_C)
 
             guard isC && isCmdOnly else {

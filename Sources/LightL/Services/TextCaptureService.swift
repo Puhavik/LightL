@@ -21,9 +21,28 @@ public struct CapturedSelection: Sendable {
 public final class TextCaptureService: Sendable {
     public static let shared = TextCaptureService()
 
+    internal static var accessibilityOverrideForTesting: Bool? = nil
+    internal static var pasteboardRestoreDelayForTesting: UInt64? = nil
+    internal static var skipSimulatePasteForTesting: Bool = false
+    internal static var forcePasteboardFallbackForTesting: Bool = false
+
+    private var savedOriginalItems: [NSPasteboardItem]?
+    private var currentRestoreTask: Task<Void, Never>?
+
+    internal var savedOriginalItemsCountForTesting: Int? {
+        savedOriginalItems?.count
+    }
+
+    internal var hasPendingRestoreTaskForTesting: Bool {
+        currentRestoreTask != nil
+    }
+
     private init() {}
 
     public static func isAccessibilityGranted(prompt: Bool = false) -> Bool {
+        if let override = accessibilityOverrideForTesting {
+            return override
+        }
         if prompt {
             let promptKey = "AXTrustedCheckOptionPrompt" as CFString
             let options = [promptKey: true] as CFDictionary
@@ -41,6 +60,8 @@ public final class TextCaptureService: Sendable {
     /// Captures the selected text from the frontmost application.
     /// First attempts via Accessibility API, falls back to simulated ⌘+C.
     public func captureSelection() async -> CapturedSelection? {
+        guard Self.isAccessibilityGranted(prompt: false) else { return nil }
+
         let mouseLoc = NSEvent.mouseLocation
         let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
 
@@ -58,18 +79,30 @@ public final class TextCaptureService: Sendable {
     }
 
     /// Replaces the currently selected text in the active app with `newText`.
-    /// Preserves user's original clipboard afterwards.
+    /// First attempts via direct Accessibility API (zero clipboard modification, native Undo).
+    /// Falls back to simulated ⌘+V with asynchronous clipboard restoration.
     public func replaceSelection(with newText: String) async -> Bool {
         guard Self.isAccessibilityGranted(prompt: false) else {
             return false
         }
 
+        // 1. Try direct Accessibility API replacement (0ms, zero clipboard touch, preserves native Undo)
+        let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        if !Self.forcePasteboardFallbackForTesting, replaceSelectionViaAccessibility(newText: newText, pid: frontmostPID) {
+            return true
+        }
+
+        // 2. Fallback to synthetic Cmd+V via Pasteboard
         let pasteboard = NSPasteboard.general
         
-        // 1. Backup existing pasteboard items
-        let backupItems = backupPasteboard(pasteboard)
+        // Backup existing pasteboard items only if no previous restore is pending
+        if currentRestoreTask != nil {
+            // Previous restore is already pending — do not overwrite savedOriginalItems with intermediate text
+        } else if savedOriginalItems == nil {
+            savedOriginalItems = backupPasteboard(pasteboard)
+        }
 
-        // 2. Set new text to pasteboard with transient markers to prevent history pollution in clipboard managers
+        // Set new text to pasteboard with transient markers to prevent history pollution in clipboard managers
         pasteboard.clearContents()
         let item = NSPasteboardItem()
         item.setString(newText, forType: .string)
@@ -80,18 +113,69 @@ public final class TextCaptureService: Sendable {
 
         let expectedChangeCount = pasteboard.changeCount
 
-        // 3. Post simulated ⌘+V
-        await simulatePaste()
+        guard !Task.isCancelled else { return false }
 
-        // 4. Wait for the active app to consume the paste event (including slower Electron/web apps)
-        try? await Task.sleep(nanoseconds: 450_000_000) // 450ms
+        // Post simulated ⌘+V
+        if !Self.skipSimulatePasteForTesting {
+            await simulatePaste()
+        }
 
-        // 5. Restore user's previous clipboard only if no other copy happened
-        if pasteboard.changeCount == expectedChangeCount {
-            restorePasteboard(pasteboard, items: backupItems)
+        guard !Task.isCancelled else { return false }
+
+        // Asynchronously restore pasteboard in background to eliminate blocking latency
+        let delay = Self.pasteboardRestoreDelayForTesting ?? 1_000_000_000
+        currentRestoreTask?.cancel()
+        currentRestoreTask = Task { @MainActor [expectedChangeCount] in
+            try? await Task.sleep(nanoseconds: delay)
+            guard !Task.isCancelled else { return }
+            if pasteboard.changeCount == expectedChangeCount, let original = self.savedOriginalItems {
+                self.restorePasteboard(pasteboard, items: original)
+            }
+            self.savedOriginalItems = nil
+            self.currentRestoreTask = nil
         }
 
         return true
+    }
+
+    private func replaceSelectionViaAccessibility(newText: String, pid: pid_t? = nil) -> Bool {
+        let focusedAppElement: AXUIElement
+        if let pid = pid {
+            focusedAppElement = AXUIElementCreateApplication(pid)
+        } else {
+            let systemWide = AXUIElementCreateSystemWide()
+            AXUIElementSetMessagingTimeout(systemWide, 0.25)
+            var focusedAppValue: AnyObject?
+            let appError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &focusedAppValue)
+            guard appError == .success,
+                  let focusedApp = focusedAppValue,
+                  CFGetTypeID(focusedApp) == AXUIElementGetTypeID() else {
+                return false
+            }
+            focusedAppElement = focusedApp as! AXUIElement
+        }
+
+        AXUIElementSetMessagingTimeout(focusedAppElement, 0.25)
+
+        var focusedElementValue: AnyObject?
+        let elError = AXUIElementCopyAttributeValue(focusedAppElement, kAXFocusedUIElementAttribute as CFString, &focusedElementValue)
+        guard elError == .success,
+              let focusedElement = focusedElementValue,
+              CFGetTypeID(focusedElement) == AXUIElementGetTypeID() else {
+            return false
+        }
+
+        let element = focusedElement as! AXUIElement
+        AXUIElementSetMessagingTimeout(element, 0.25)
+
+        var isSettable: DarwinBoolean = false
+        let settableStatus = AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &isSettable)
+        guard settableStatus == .success, isSettable.boolValue else {
+            return false
+        }
+
+        let setStatus = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, newText as CFTypeRef)
+        return setStatus == .success
     }
 
     // MARK: - Accessibility Helpers
@@ -102,6 +186,7 @@ public final class TextCaptureService: Sendable {
             focusedAppElement = AXUIElementCreateApplication(pid)
         } else {
             let systemWide = AXUIElementCreateSystemWide()
+            AXUIElementSetMessagingTimeout(systemWide, 0.25)
             var focusedAppValue: AnyObject?
             let appError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &focusedAppValue)
             guard appError == .success,
@@ -112,6 +197,8 @@ public final class TextCaptureService: Sendable {
             focusedAppElement = focusedApp as! AXUIElement
         }
 
+        AXUIElementSetMessagingTimeout(focusedAppElement, 0.25)
+
         var focusedElementValue: AnyObject?
         let elError = AXUIElementCopyAttributeValue(focusedAppElement, kAXFocusedUIElementAttribute as CFString, &focusedElementValue)
         guard elError == .success,
@@ -121,6 +208,7 @@ public final class TextCaptureService: Sendable {
         }
 
         let element = focusedElement as! AXUIElement
+        AXUIElementSetMessagingTimeout(element, 0.25)
 
         var selectedTextValue: AnyObject?
         let textError = AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &selectedTextValue)
@@ -139,10 +227,12 @@ public final class TextCaptureService: Sendable {
                 var rect = CGRect.zero
                 if AXValueGetValue(val as! AXValue, .cgRect, &rect), rect.width > 1, rect.height > 1 {
                     // Convert Carbon/AX coordinates (origin at top-left) to Cocoa coordinates (origin at bottom-left)
-                    let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first
-                    let primaryScreenHeight = primaryScreen?.frame.height ?? 0
-                    let cocoaY = primaryScreenHeight - rect.origin.y - rect.height
-                    bounds = CGRect(x: rect.origin.x, y: cocoaY, width: rect.width, height: rect.height)
+                    guard let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
+                          primaryScreen.frame.height > 0 else {
+                        return (text, nil)
+                    }
+                    let primaryScreenHeight = primaryScreen.frame.height
+                    bounds = Self.convertCarbonAXRectToCocoa(rect, primaryScreenHeight: primaryScreenHeight)
                 }
             }
         }
@@ -150,10 +240,23 @@ public final class TextCaptureService: Sendable {
         return (text, bounds)
     }
 
+    nonisolated public static func convertCarbonAXRectToCocoa(_ rect: CGRect, primaryScreenHeight: CGFloat) -> CGRect {
+        let cocoaY = primaryScreenHeight - rect.origin.y - rect.height
+        return CGRect(x: rect.origin.x, y: cocoaY, width: rect.width, height: rect.height)
+    }
+
     // MARK: - Clipboard Simulation
 
     private func getSelectionViaClipboard() async -> String? {
         let pasteboard = NSPasteboard.general
+        if currentRestoreTask != nil {
+            if let original = savedOriginalItems {
+                restorePasteboard(pasteboard, items: original)
+                savedOriginalItems = nil
+            }
+            currentRestoreTask?.cancel()
+            currentRestoreTask = nil
+        }
         let previousChangeCount = pasteboard.changeCount
         let previousItems = backupPasteboard(pasteboard)
 
@@ -163,12 +266,14 @@ public final class TextCaptureService: Sendable {
         let start = Date()
         var updated = false
         var pollInterval: UInt64 = 6_000_000 // 6ms
-        while Date().timeIntervalSince(start) < 0.25 {
+        while Date().timeIntervalSince(start) < 0.15 {
+            if Task.isCancelled { break }
             if pasteboard.changeCount != previousChangeCount {
                 updated = true
                 break
             }
             try? await Task.sleep(nanoseconds: pollInterval)
+            if Task.isCancelled { break }
             if pollInterval < 18_000_000 {
                 pollInterval += 4_000_000
             }
@@ -186,11 +291,13 @@ public final class TextCaptureService: Sendable {
     }
 
     private func simulateCopy() async {
-        let src = CGEventSource(stateID: .hidSystemState)
+        let src = CGEventSource(stateID: .privateState)
         let cDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: true)
         cDown?.flags = .maskCommand
+        cDown?.setIntegerValueField(.eventSourceUserData, value: 0x4C54_4C59)
         let cUp = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: false)
         cUp?.flags = .maskCommand
+        cUp?.setIntegerValueField(.eventSourceUserData, value: 0x4C54_4C59)
 
         cDown?.post(tap: .cghidEventTap)
         try? await Task.sleep(nanoseconds: 12_000_000) // 12ms pause so frontmost app processes key down before key up
@@ -198,7 +305,7 @@ public final class TextCaptureService: Sendable {
     }
 
     private func simulatePaste() async {
-        let src = CGEventSource(stateID: .hidSystemState)
+        let src = CGEventSource(stateID: .privateState)
         let vDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: true)
         vDown?.flags = .maskCommand
         let vUp = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_V), keyDown: false)
@@ -211,37 +318,31 @@ public final class TextCaptureService: Sendable {
 
     // MARK: - Pasteboard Backup / Restore
 
-    private struct PasteboardItemBackup {
-        let types: [NSPasteboard.PasteboardType]
-        let dataMap: [NSPasteboard.PasteboardType: Data]
-    }
-
-    private func backupPasteboard(_ pasteboard: NSPasteboard) -> [PasteboardItemBackup] {
+    internal func backupPasteboard(_ pasteboard: NSPasteboard) -> [NSPasteboardItem] {
         guard let items = pasteboard.pasteboardItems else { return [] }
         return items.map { item in
-            var map: [NSPasteboard.PasteboardType: Data] = [:]
+            let newItem = NSPasteboardItem()
             for type in item.types {
                 if let data = item.data(forType: type) {
-                    map[type] = data
-                }
-            }
-            return PasteboardItemBackup(types: item.types, dataMap: map)
-        }
-    }
-
-    private func restorePasteboard(_ pasteboard: NSPasteboard, items: [PasteboardItemBackup]) {
-        pasteboard.clearContents()
-        guard !items.isEmpty else { return }
-        var newItems: [NSPasteboardItem] = []
-        for itemBackup in items {
-            let newItem = NSPasteboardItem()
-            for type in itemBackup.types {
-                if let data = itemBackup.dataMap[type] {
                     newItem.setData(data, forType: type)
                 }
             }
-            newItems.append(newItem)
+            return newItem
         }
-        pasteboard.writeObjects(newItems)
+    }
+
+    internal func restorePasteboard(_ pasteboard: NSPasteboard, items: [NSPasteboardItem]) {
+        pasteboard.clearContents()
+        guard !items.isEmpty else { return }
+        let freshItems = items.map { item in
+            let newItem = NSPasteboardItem()
+            for type in item.types {
+                if let data = item.data(forType: type) {
+                    newItem.setData(data, forType: type)
+                }
+            }
+            return newItem
+        }
+        pasteboard.writeObjects(freshItems)
     }
 }

@@ -23,8 +23,10 @@ public final class AppSettings {
 
     public var geminiApiKey: String {
         didSet {
-            KeychainHelper.saveApiKey(geminiApiKey)
-            defaults.removeObject(forKey: Keys.apiKey)
+            let saved = KeychainHelper.saveApiKey(geminiApiKey)
+            if saved {
+                defaults.removeObject(forKey: Keys.apiKey)
+            }
             notifyChange()
         }
     }
@@ -45,9 +47,7 @@ public final class AppSettings {
 
     public var rewriteMode: RewriteMode {
         didSet {
-            if let data = try? JSONEncoder().encode(rewriteMode) {
-                defaults.set(data, forKey: Keys.rewriteMode)
-            }
+            defaults.set(rewriteMode.rawValue, forKey: Keys.rewriteMode)
             notifyChange()
         }
     }
@@ -88,13 +88,22 @@ public final class AppSettings {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
     }
 
+    public func migrateLegacySettings() {
+        if let legacyKey = defaults.string(forKey: Keys.apiKey), !legacyKey.isEmpty {
+            if KeychainHelper.saveApiKey(legacyKey) {
+                defaults.removeObject(forKey: Keys.apiKey)
+            }
+        }
+    }
+
     private init() {
         if let key = KeychainHelper.loadApiKey(), !key.isEmpty {
             self.geminiApiKey = key
         } else if let legacyKey = defaults.string(forKey: Keys.apiKey), !legacyKey.isEmpty {
             self.geminiApiKey = legacyKey
-            KeychainHelper.saveApiKey(legacyKey)
-            defaults.removeObject(forKey: Keys.apiKey)
+            if KeychainHelper.saveApiKey(legacyKey) {
+                defaults.removeObject(forKey: Keys.apiKey)
+            }
         } else {
             self.geminiApiKey = ""
         }
@@ -108,8 +117,10 @@ public final class AppSettings {
         }
         self.doubleCmdCEnabled = defaults.object(forKey: Keys.doubleCmdCEnabled) as? Bool ?? true
 
-        if let modeData = defaults.data(forKey: Keys.rewriteMode),
-           let mode = try? JSONDecoder().decode(RewriteMode.self, from: modeData) {
+        if let modeString = defaults.string(forKey: Keys.rewriteMode) {
+            self.rewriteMode = RewriteMode(rawValue: modeString) ?? .proofread
+        } else if let modeData = defaults.data(forKey: Keys.rewriteMode),
+                  let mode = try? JSONDecoder().decode(RewriteMode.self, from: modeData) {
             self.rewriteMode = mode
         } else {
             self.rewriteMode = .proofread

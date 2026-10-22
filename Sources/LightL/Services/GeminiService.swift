@@ -52,7 +52,7 @@ public actor GeminiService {
     private init() {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 25.0
-        config.timeoutIntervalForResource = 35.0
+        config.timeoutIntervalForResource = 120.0
         config.waitsForConnectivity = false
         config.urlCache = nil
         config.httpCookieStorage = nil
@@ -61,14 +61,12 @@ public actor GeminiService {
     }
 
     /// Pre-warms the HTTP/2 & TLS 1.3 connection to Google Gemini API to eliminate initial handshake latency
-    public func prewarm() {
-        Task {
-            guard let url = URL(string: "https://generativelanguage.googleapis.com") else { return }
-            var request = URLRequest(url: url)
-            request.httpMethod = "HEAD"
-            request.timeoutInterval = 4.0
-            _ = try? await session.data(for: request)
-        }
+    public func prewarm() async {
+        guard let url = URL(string: "https://generativelanguage.googleapis.com") else { return }
+        var request = URLRequest(url: url)
+        request.httpMethod = "HEAD"
+        request.timeoutInterval = 4.0
+        _ = try? await session.data(for: request)
     }
 
     public func translate(
@@ -85,11 +83,14 @@ public actor GeminiService {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return "" }
 
+        let safeText = trimmedText.replacingOccurrences(of: "</input>", with: "&lt;/input&gt;")
+
         // Highly compressed system prompt for sub-200ms TTFT
-        let systemPrompt = "Translate to \(targetLanguage.name) (\(targetLanguage.nativeName)). Output ONLY translation. Keep formatting. Never add quotes or conversational text."
+        let systemPrompt = "Translate only the text inside <input> tags to \(targetLanguage.name) (\(targetLanguage.nativeName)). Output ONLY translation. Keep formatting. Do not enclose output in quotes. Do not add conversational text."
+        let userPrompt = "<input>\n\(safeText)\n</input>"
 
         return try await generate(
-            prompt: trimmedText,
+            prompt: userPrompt,
             systemInstruction: systemPrompt,
             apiKey: apiKey,
             model: model,
@@ -111,16 +112,19 @@ public actor GeminiService {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return "" }
 
+        let safeText = trimmedText.replacingOccurrences(of: "</input>", with: "&lt;/input&gt;")
+
         let systemPrompt: String
         switch mode {
         case .proofread:
-            systemPrompt = "Correct spelling, grammar, punctuation in same language. Output ONLY corrected text. Keep formatting. Never add quotes or commentary."
+            systemPrompt = "Correct spelling, grammar, punctuation of only the text inside <input> tags in same language. Output ONLY corrected text. Keep formatting. Do not enclose output in quotes. Do not add conversational text."
         case .improveStyle:
-            systemPrompt = "Refine and polish text in same language. Output ONLY polished text. Keep core meaning and formatting. Never add quotes or greetings."
+            systemPrompt = "Refine and polish only the text inside <input> tags in same language. Output ONLY polished text. Keep core meaning and formatting. Do not enclose output in quotes. Do not add conversational text."
         }
+        let userPrompt = "<input>\n\(safeText)\n</input>"
 
         return try await generate(
-            prompt: trimmedText,
+            prompt: userPrompt,
             systemInstruction: systemPrompt,
             apiKey: apiKey,
             model: model,
@@ -143,6 +147,26 @@ public actor GeminiService {
             temperature: 0.0,
             onChunk: nil
         )
+    }
+
+    internal static func supportsThinking(_ cleanModel: String) -> Bool {
+        supportsThinking(cleanModel: cleanModel)
+    }
+
+    internal static func supportsThinking(cleanModel: String) -> Bool {
+        let isLite = cleanModel.contains("lite")
+        return !isLite && (
+            cleanModel.contains("3.8") ||
+            cleanModel.contains("2.5") ||
+            cleanModel.contains("2.0") ||
+            cleanModel.contains("thinking") ||
+            cleanModel.contains("argon") ||
+            cleanModel.contains("gemini-4")
+        )
+    }
+
+    internal static func sanitizeApiKey(_ apiKey: String) -> String {
+        apiKey.filter { !$0.isNewline && !$0.isWhitespace }
     }
 
     private func generate(
@@ -174,9 +198,7 @@ public actor GeminiService {
         ]
 
         // Eliminate thinking latency for reasoning models
-        let isLite = cleanModel.contains("lite")
-        let supportsThinking = !isLite && (cleanModel.contains("3.8") || cleanModel.contains("2.5") || cleanModel.contains("2.0") || cleanModel.contains("thinking"))
-        if supportsThinking {
+        if Self.supportsThinking(cleanModel: cleanModel) {
             generationConfig["thinkingConfig"] = [
                 "thinkingBudget": 0
             ]
@@ -189,7 +211,8 @@ public actor GeminiService {
                 systemInstruction: systemInstruction,
                 apiKey: apiKey,
                 generationConfig: generationConfig,
-                onChunk: onChunk
+                onChunk: onChunk,
+                canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil
             )
         } else {
             return try await executeGenerate(
@@ -203,18 +226,18 @@ public actor GeminiService {
         }
     }
 
-    private func executeStreamGenerate(
+    private func buildURLRequest(
         url: URL,
+        apiKey: String,
         prompt: String,
         systemInstruction: String,
-        apiKey: String,
-        generationConfig: [String: Any],
-        onChunk: @Sendable (String) -> Void
-    ) async throws -> String {
+        generationConfig: [String: Any]
+    ) throws -> URLRequest {
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "x-goog-api-key")
+        let sanitizedApiKey = Self.sanitizeApiKey(apiKey)
+        request.addValue(sanitizedApiKey, forHTTPHeaderField: "x-goog-api-key")
 
         let payload: [String: Any] = [
             "contents": [
@@ -229,21 +252,47 @@ public actor GeminiService {
                     ["text": systemInstruction]
                 ]
             ],
-            "generationConfig": generationConfig
+            "generationConfig": generationConfig,
+            "safetySettings": [
+                ["category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"],
+                ["category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"],
+                ["category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"],
+                ["category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"]
+            ]
         ]
 
-        let requestData: Data
         do {
-            requestData = try JSONSerialization.data(withJSONObject: payload, options: [])
+            request.httpBody = try JSONSerialization.data(withJSONObject: payload, options: [])
         } catch {
             throw GeminiError.decodingError("Ошибка сериализации запроса: \(error.localizedDescription)")
         }
-        request.httpBody = requestData
+        return request
+    }
+
+    private func executeStreamGenerate(
+        url: URL,
+        prompt: String,
+        systemInstruction: String,
+        apiKey: String,
+        generationConfig: [String: Any],
+        onChunk: @escaping @Sendable (String) -> Void,
+        canRetryWithoutThinking: Bool
+    ) async throws -> String {
+        let request = try buildURLRequest(
+            url: url,
+            apiKey: apiKey,
+            prompt: prompt,
+            systemInstruction: systemInstruction,
+            generationConfig: generationConfig
+        )
 
         let (asyncBytes, response): (URLSession.AsyncBytes, URLResponse)
         do {
             (asyncBytes, response) = try await session.bytes(for: request)
         } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                throw CancellationError()
+            }
             throw GeminiError.networkError(error)
         }
 
@@ -252,14 +301,40 @@ public actor GeminiService {
         }
 
         if httpResponse.statusCode != 200 {
-            var errorBody = ""
-            for try await line in asyncBytes.lines {
-                errorBody += line
-                if errorBody.count > 500 { break }
+            var errorData = Data()
+            do {
+                for try await byte in asyncBytes {
+                    errorData.append(byte)
+                    if errorData.count >= 65536 { break }
+                }
+            } catch {
+                if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                    throw CancellationError()
+                }
             }
+
+            let errorBody = String(data: errorData, encoding: .utf8) ?? ""
+
+            // Retry on 400 only if error response text contains "thinking" or "thinkingConfig"
+            if httpResponse.statusCode == 400 && canRetryWithoutThinking {
+                let lowerError = errorBody.lowercased()
+                if lowerError.contains("thinking") || lowerError.contains("thinkingconfig") {
+                    var fallbackConfig = generationConfig
+                    fallbackConfig.removeValue(forKey: "thinkingConfig")
+                    return try await executeStreamGenerate(
+                        url: url,
+                        prompt: prompt,
+                        systemInstruction: systemInstruction,
+                        apiKey: apiKey,
+                        generationConfig: fallbackConfig,
+                        onChunk: onChunk,
+                        canRetryWithoutThinking: false
+                    )
+                }
+            }
+
             var errorMessage = "HTTP \(httpResponse.statusCode)"
-            if let data = errorBody.data(using: .utf8),
-               let errObj = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data),
+            if let errObj = try? JSONDecoder().decode(GeminiErrorResponse.self, from: errorData),
                let msg = errObj.error?.message {
                 errorMessage = msg
             }
@@ -267,38 +342,40 @@ public actor GeminiService {
         }
 
         var accumulatedText = ""
-        for try await line in asyncBytes.lines {
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard trimmed.hasPrefix("data: ") else { continue }
-            let jsonString = String(trimmed.dropFirst(6))
-            guard let data = jsonString.data(using: .utf8),
-                  let chunk = try? JSONDecoder().decode(GeminiResponseDTO.self, from: data) else {
-                continue
-            }
+        var sseBuffer = ""
 
-            if let blockReason = chunk.promptFeedback?.blockReason {
-                throw GeminiError.decodingError("Запрос заблокирован Gemini (причина: \(blockReason)).")
-            }
-
-            if let candidate = chunk.candidates?.first {
-                if let finish = candidate.finishReason {
-                    if finish == "SAFETY" {
-                        throw GeminiError.decodingError("Ответ заблокирован фильтрами безопасности Gemini.")
-                    } else if finish == "RECITATION" {
-                        throw GeminiError.decodingError("Ответ заблокирован из-за совпадения с источником (RECITATION).")
+        do {
+            for try await rawLine in asyncBytes.lines {
+                let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
+                if line.hasPrefix("data:") {
+                    var payload = String(line.dropFirst(5))
+                    if payload.hasPrefix(" ") {
+                        payload.removeFirst()
                     }
-                }
-
-                if let parts = candidate.content?.parts {
-                    for part in parts {
-                        if part.thought == true { continue }
-                        if let piece = part.text, !piece.isEmpty {
-                            accumulatedText += piece
-                            onChunk(accumulatedText)
-                        }
+                    if !sseBuffer.isEmpty {
+                        sseBuffer += "\n"
+                    }
+                    sseBuffer += payload
+                } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                    if !sseBuffer.isEmpty {
+                        let payload = sseBuffer
+                        sseBuffer = ""
+                        try Self.processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
                     }
                 }
             }
+
+            if !sseBuffer.isEmpty {
+                let payload = sseBuffer
+                sseBuffer = ""
+                try Self.processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
+            }
+        } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                throw CancellationError()
+            }
+            if let geminiError = error as? GeminiError { throw geminiError }
+            throw GeminiError.networkError(error)
         }
 
         let trimmedResult = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -316,39 +393,21 @@ public actor GeminiService {
         generationConfig: [String: Any],
         canRetryWithoutThinking: Bool
     ) async throws -> String {
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.addValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.addValue(apiKey.trimmingCharacters(in: .whitespacesAndNewlines), forHTTPHeaderField: "x-goog-api-key")
-
-        let payload: [String: Any] = [
-            "contents": [
-                [
-                    "parts": [
-                        ["text": prompt]
-                    ]
-                ]
-            ],
-            "systemInstruction": [
-                "parts": [
-                    ["text": systemInstruction]
-                ]
-            ],
-            "generationConfig": generationConfig
-        ]
-
-        let requestData: Data
-        do {
-            requestData = try JSONSerialization.data(withJSONObject: payload, options: [])
-        } catch {
-            throw GeminiError.decodingError("Ошибка сериализации запроса: \(error.localizedDescription)")
-        }
-        request.httpBody = requestData
+        let request = try buildURLRequest(
+            url: url,
+            apiKey: apiKey,
+            prompt: prompt,
+            systemInstruction: systemInstruction,
+            generationConfig: generationConfig
+        )
 
         let (data, response): (Data, URLResponse)
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                throw CancellationError()
+            }
             throw GeminiError.networkError(error)
         }
 
@@ -356,21 +415,25 @@ public actor GeminiService {
             throw GeminiError.emptyResponse
         }
 
-        // If 400 Bad Request occurred and thinkingConfig was passed, retry without thinkingConfig
-        if httpResponse.statusCode == 400 && canRetryWithoutThinking {
-            var fallbackConfig = generationConfig
-            fallbackConfig.removeValue(forKey: "thinkingConfig")
-            return try await executeGenerate(
-                url: url,
-                prompt: prompt,
-                systemInstruction: systemInstruction,
-                apiKey: apiKey,
-                generationConfig: fallbackConfig,
-                canRetryWithoutThinking: false
-            )
-        }
-
         if httpResponse.statusCode != 200 {
+            let errorBody = String(data: data, encoding: .utf8) ?? ""
+            // Retry on 400 only if error response text contains "thinking" or "thinkingConfig"
+            if httpResponse.statusCode == 400 && canRetryWithoutThinking {
+                let lowerError = errorBody.lowercased()
+                if lowerError.contains("thinking") || lowerError.contains("thinkingconfig") {
+                    var fallbackConfig = generationConfig
+                    fallbackConfig.removeValue(forKey: "thinkingConfig")
+                    return try await executeGenerate(
+                        url: url,
+                        prompt: prompt,
+                        systemInstruction: systemInstruction,
+                        apiKey: apiKey,
+                        generationConfig: fallbackConfig,
+                        canRetryWithoutThinking: false
+                    )
+                }
+            }
+
             var errorMessage = "HTTP \(httpResponse.statusCode)"
             if let errorObj = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data),
                let msg = errorObj.error?.message {
@@ -382,40 +445,131 @@ public actor GeminiService {
         return try Self.parseResponseData(data)
     }
 
-    private struct GeminiErrorResponse: Decodable {
-        struct ErrorDetail: Decodable {
-            let message: String?
-            let code: Int?
+    internal struct GeminiErrorResponse: Decodable, Sendable {
+        internal struct ErrorDetail: Decodable, Sendable {
+            internal let message: String?
+            internal let code: Int?
+
+            internal init(message: String? = nil, code: Int? = nil) {
+                self.message = message
+                self.code = code
+            }
         }
-        let error: ErrorDetail?
+        internal let error: ErrorDetail?
+
+        internal init(error: ErrorDetail? = nil) {
+            self.error = error
+        }
     }
 
-    private struct GeminiResponseDTO: Decodable {
-        struct Candidate: Decodable {
-            struct Content: Decodable {
-                struct Part: Decodable {
-                    let text: String?
-                    let thought: Bool?
+    internal struct GeminiResponseDTO: Decodable, Sendable {
+        internal struct Candidate: Decodable, Sendable {
+            internal struct Content: Decodable, Sendable {
+                internal struct Part: Decodable, Sendable {
+                    internal let text: String?
+                    internal let thought: Bool?
                 }
-                let parts: [Part]?
+                internal let parts: [Part]?
             }
-            let content: Content?
-            let finishReason: String?
+            internal let content: Content?
+            internal let finishReason: String?
         }
-        struct PromptFeedback: Decodable {
-            let blockReason: String?
+        internal struct PromptFeedback: Decodable, Sendable {
+            internal let blockReason: String?
         }
-        let candidates: [Candidate]?
-        let promptFeedback: PromptFeedback?
+        internal let candidates: [Candidate]?
+        internal let promptFeedback: PromptFeedback?
+    }
+
+    internal static func processSSEPayload(
+        _ jsonString: String,
+        accumulatedText: inout String,
+        onChunk: ((String) -> Void)? = nil
+    ) throws {
+        guard let data = jsonString.data(using: .utf8) else { return }
+
+        if let err = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data),
+           let msg = err.error?.message {
+            throw GeminiError.badServerResponse(statusCode: err.error?.code ?? 500, message: msg)
+        }
+
+        guard let chunk = try? JSONDecoder().decode(GeminiResponseDTO.self, from: data) else {
+            return
+        }
+
+        if let blockReason = chunk.promptFeedback?.blockReason {
+            throw GeminiError.decodingError(L10n.tr(ru: "Запрос заблокирован Gemini (причина: \(blockReason)).", en: "Request blocked by Gemini (reason: \(blockReason))."))
+        }
+
+        if let candidate = chunk.candidates?.first {
+            let parts = candidate.content?.parts ?? []
+            if let finish = candidate.finishReason {
+                if finish == "SAFETY" {
+                    throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован фильтрами безопасности Gemini.", en: "Response blocked by Gemini safety filters."))
+                } else if finish == "RECITATION" {
+                    throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован из-за совпадения с источником (RECITATION).", en: "Response blocked due to recitation check."))
+                } else if parts.isEmpty && finish != "STOP" && finish != "MAX_TOKENS" && accumulatedText.isEmpty {
+                    throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован Gemini (причина: \(finish)).", en: "Response blocked by Gemini (reason: \(finish))."))
+                }
+            }
+
+            for part in parts {
+                if part.thought == true { continue }
+                if let piece = part.text, !piece.isEmpty {
+                    accumulatedText += piece
+                    onChunk?(accumulatedText)
+                }
+            }
+        }
+    }
+
+    internal static func parseSSELines<S: Sequence>(
+        _ lines: S,
+        onChunk: ((String) -> Void)? = nil
+    ) throws -> String where S.Element == String {
+        var accumulatedText = ""
+        var sseBuffer = ""
+
+        for rawLine in lines {
+            let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
+            if line.hasPrefix("data:") {
+                var payload = String(line.dropFirst(5))
+                if payload.hasPrefix(" ") {
+                    payload.removeFirst()
+                }
+                if !sseBuffer.isEmpty {
+                    sseBuffer += "\n"
+                }
+                sseBuffer += payload
+            } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
+                if !sseBuffer.isEmpty {
+                    let payload = sseBuffer
+                    sseBuffer = ""
+                    try processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
+                }
+            }
+        }
+
+        if !sseBuffer.isEmpty {
+            let payload = sseBuffer
+            sseBuffer = ""
+            try processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
+        }
+
+        let trimmedResult = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedResult.isEmpty else {
+            throw GeminiError.emptyResponse
+        }
+        return trimmedResult
     }
 
     public static func parseResponseData(_ data: Data) throws -> String {
         guard let response = try? JSONDecoder().decode(GeminiResponseDTO.self, from: data) else {
-            throw GeminiError.decodingError("Не удалось распарсить JSON ответ сервера.")
+            throw GeminiError.decodingError(L10n.tr(ru: "Не удалось распарсить JSON ответ сервера.", en: "Failed to parse server JSON response."))
         }
 
         if let blockReason = response.promptFeedback?.blockReason {
-            throw GeminiError.decodingError("Запрос заблокирован Gemini (причина: \(blockReason)).")
+            throw GeminiError.decodingError(L10n.tr(ru: "Запрос заблокирован Gemini (причина: \(blockReason)).", en: "Request blocked by Gemini (reason: \(blockReason))."))
         }
 
         guard let firstCandidate = response.candidates?.first else {
@@ -425,9 +579,9 @@ public actor GeminiService {
         if let finishReason = firstCandidate.finishReason {
             switch finishReason {
             case "SAFETY":
-                throw GeminiError.decodingError("Ответ заблокирован фильтрами безопасности Gemini.")
+                throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован фильтрами безопасности Gemini.", en: "Response blocked by Gemini safety filters."))
             case "RECITATION":
-                throw GeminiError.decodingError("Ответ заблокирован из-за совпадения с источником (RECITATION).")
+                throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован из-за совпадения с источником (RECITATION).", en: "Response blocked due to recitation check."))
             default:
                 break
             }
@@ -435,7 +589,7 @@ public actor GeminiService {
 
         guard let parts = firstCandidate.content?.parts else {
             if let reason = firstCandidate.finishReason {
-                throw GeminiError.decodingError("Пустой ответ от Gemini (причина: \(reason)).")
+                throw GeminiError.decodingError(L10n.tr(ru: "Пустой ответ от Gemini (причина: \(reason)).", en: "Empty response from Gemini (reason: \(reason))."))
             }
             throw GeminiError.emptyResponse
         }
@@ -454,7 +608,7 @@ public actor GeminiService {
         let trimmed = resultText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             if let reason = firstCandidate.finishReason {
-                throw GeminiError.decodingError("Пустой ответ от Gemini (причина: \(reason)).")
+                throw GeminiError.decodingError(L10n.tr(ru: "Пустой ответ от Gemini (причина: \(reason)).", en: "Empty response from Gemini (reason: \(reason))."))
             }
             throw GeminiError.emptyResponse
         }

@@ -23,6 +23,26 @@ public struct ShortcutModel: Codable, Equatable, Sendable {
         modifiers: UInt32(cmdKey | optionKey)
     )
 
+    public static func isSystemReserved(keyCode: UInt32, modifiers: UInt32) -> Bool {
+        let isCmdOnly = (modifiers == UInt32(cmdKey))
+        let blacklistedKeyCodes: Set<UInt32> = [
+            UInt32(kVK_ANSI_C),
+            UInt32(kVK_ANSI_V),
+            UInt32(kVK_ANSI_X),
+            UInt32(kVK_ANSI_Z),
+            UInt32(kVK_ANSI_A),
+            UInt32(kVK_ANSI_Q),
+            UInt32(kVK_ANSI_W),
+            UInt32(kVK_ANSI_S),
+            UInt32(kVK_ANSI_O),
+            UInt32(kVK_ANSI_H),
+            UInt32(kVK_ANSI_M),
+            UInt32(kVK_Space),
+            UInt32(kVK_Tab)
+        ]
+        return isCmdOnly && blacklistedKeyCodes.contains(keyCode)
+    }
+
     public var displayString: String {
         return keyGlyphs.joined()
     }

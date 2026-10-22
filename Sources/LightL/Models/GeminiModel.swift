@@ -3,8 +3,10 @@ import Foundation
 public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
     public var id: String { modelId }
     public let modelId: String
-    public let displayName: String
-    public let description: String
+
+    public init(modelId: String) {
+        self.modelId = modelId
+    }
 
     public var localizedDisplayName: String {
         switch modelId {
@@ -19,7 +21,7 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
         case "gemini-4-argon":
             return "Gemini 4 Argon"
         default:
-            return displayName
+            return modelId
         }
     }
 
@@ -51,36 +53,16 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
                 en: "Flagship next-gen Gemini 4 model."
             )
         default:
-            return description
+            return ""
         }
     }
 
     public static let availableModels: [GeminiModelOption] = [
-        GeminiModelOption(
-            modelId: "gemini-3.5-flash-lite",
-            displayName: "Gemini 3.5 Flash-Lite (Рекомендуется)",
-            description: "Сверхбыстрая легковесная модель без рассуждений (thinking). Мгновенный перевод за ~200-400мс."
-        ),
-        GeminiModelOption(
-            modelId: "gemini-3.8-flash",
-            displayName: "Gemini 3.8 Flash",
-            description: "Флагманская Flash-модель (режим thinking принудительно отключен для максимальной скорости)."
-        ),
-        GeminiModelOption(
-            modelId: "gemini-3.6-flash",
-            displayName: "Gemini 3.6 Flash",
-            description: "Сбалансированная модель без размышлений."
-        ),
-        GeminiModelOption(
-            modelId: "gemini-flash-latest",
-            displayName: "Gemini Flash (Latest alias)",
-            description: "Автоматически использует самую свежую Flash-модель."
-        ),
-        GeminiModelOption(
-            modelId: "gemini-4-argon",
-            displayName: "Gemini 4 Argon",
-            description: "Флагманская модель поколения Gemini 4."
-        )
+        GeminiModelOption(modelId: "gemini-3.5-flash-lite"),
+        GeminiModelOption(modelId: "gemini-3.8-flash"),
+        GeminiModelOption(modelId: "gemini-3.6-flash"),
+        GeminiModelOption(modelId: "gemini-flash-latest"),
+        GeminiModelOption(modelId: "gemini-4-argon")
     ]
 
     public static let defaultModel = availableModels[0] // gemini-3.5-flash-lite

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 public enum AppLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
     case system = "system"
@@ -39,8 +40,22 @@ public enum AppLanguage: String, CaseIterable, Identifiable, Codable, Sendable {
 
 public struct L10n: Sendable {
     private static let interfaceLanguageKey = "LightL_interfaceLanguage"
+    private static let settingsNotificationName = Notification.Name("LightLAppSettingsDidChangeNotification")
 
-    public static var currentLanguage: AppLanguage {
+    private static let cache: OSAllocatedUnfairLock<AppLanguage> = {
+        let initial = loadLanguageFromUserDefaults()
+        let lock = OSAllocatedUnfairLock(initialState: initial)
+        NotificationCenter.default.addObserver(
+            forName: settingsNotificationName,
+            object: nil,
+            queue: nil
+        ) { _ in
+            reloadCache()
+        }
+        return lock
+    }()
+
+    private static func loadLanguageFromUserDefaults() -> AppLanguage {
         let configured = UserDefaults.standard.string(forKey: interfaceLanguageKey)
         switch configured {
         case "ru":
@@ -49,6 +64,20 @@ public struct L10n: Sendable {
             return .english
         default:
             return AppLanguage.systemLanguage
+        }
+    }
+
+    public static func reloadCache() {
+        let lang = loadLanguageFromUserDefaults()
+        cache.withLock { $0 = lang }
+    }
+
+    public static var currentLanguage: AppLanguage {
+        get {
+            cache.withLock { $0 }
+        }
+        set {
+            cache.withLock { $0 = newValue }
         }
     }
 
