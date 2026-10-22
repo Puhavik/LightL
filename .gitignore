@@ -1,0 +1,38 @@
+# OS files
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# Xcode & SwiftPM
+/.build/
+/Packages/
+xcuserdata/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+.netrc
+
+# Build artifacts & packages
+*.app/
+*.app
+*.dmg
+*.zip
+*.tar.gz
+*.dSYM
+
+# Environment & credentials
+.env
+.env.*
+*.p12
+*.cer
+*.mobileprovision
+
+# Agent & local tools
+.agents/
+AGENTS.md
+.caveman.json
