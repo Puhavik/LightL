@@ -14,8 +14,11 @@ public final class AppCoordinator {
     private var translationPanel: FloatingTranslationPanel!
 
     private var currentTranslateTask: Task<Void, Never>?
+    private var currentTranslateTaskId = UUID()
     private var currentRewriteTask: Task<Void, Never>?
+    private var currentRewriteTaskId = UUID()
     private var currentReplaceTask: Task<Void, Never>?
+    private var settingsObserver: (any NSObjectProtocol)?
 
     private init() {}
 
@@ -30,6 +33,13 @@ public final class AppCoordinator {
         }
 
         translationPanel = FloatingTranslationPanel()
+        translationPanel.onDismiss = { [weak self] in
+            guard let self = self else { return }
+            self.currentTranslateTaskId = UUID()
+            self.currentTranslateTask?.cancel()
+            self.currentTranslateTask = nil
+            self.statusBarController.setLoading(false)
+        }
 
         setupHotKeyCallbacks()
         applyCurrentHotKeys()
@@ -42,6 +52,28 @@ public final class AppCoordinator {
     }
 
     public func stop() {
+        translationPanel?.dismiss()
+        currentTranslateTask?.cancel()
+        currentTranslateTask = nil
+        currentRewriteTask?.cancel()
+        currentRewriteTask = nil
+        currentReplaceTask?.cancel()
+        currentReplaceTask = nil
+        if let observer = settingsObserver {
+            NotificationCenter.default.removeObserver(observer)
+            settingsObserver = nil
+        }
+        let (translateSuccess, rewriteSuccess) = hotKeyManager.updateHotKeys(
+            translateShortcut: settings.translateShortcut,
+            rewriteShortcut: settings.rewriteShortcut,
+            enableDoubleCmdC: false
+        )
+        if !translateSuccess {
+            print("[LightL] Failed to register translate shortcut on stop: \(settings.translateShortcut.displayString)")
+        }
+        if !rewriteSuccess {
+            print("[LightL] Failed to register rewrite shortcut on stop: \(settings.rewriteShortcut.displayString)")
+        }
         statusBarController?.destroy()
     }
 
@@ -56,15 +88,24 @@ public final class AppCoordinator {
     }
 
     private func applyCurrentHotKeys() {
-        hotKeyManager.updateHotKeys(
+        let (translateSuccess, rewriteSuccess) = hotKeyManager.updateHotKeys(
             translateShortcut: settings.translateShortcut,
             rewriteShortcut: settings.rewriteShortcut,
             enableDoubleCmdC: settings.doubleCmdCEnabled
         )
+        if !translateSuccess {
+            print("[LightL] Failed to register translate shortcut: \(settings.translateShortcut.displayString)")
+        }
+        if !rewriteSuccess {
+            print("[LightL] Failed to register rewrite shortcut: \(settings.rewriteShortcut.displayString)")
+        }
     }
 
     private func observeSettingsChanges() {
-        NotificationCenter.default.addObserver(
+        if let existing = settingsObserver {
+            NotificationCenter.default.removeObserver(existing)
+        }
+        settingsObserver = NotificationCenter.default.addObserver(
             forName: AppSettings.didChangeNotification,
             object: nil,
             queue: .main
@@ -78,13 +119,26 @@ public final class AppCoordinator {
     // MARK: - Scenario 1: Translation (Floating Popover)
 
     private func handleTranslateTrigger() {
+        currentRewriteTask?.cancel()
+        currentRewriteTask = nil
+
+        guard TextCaptureService.isAccessibilityGranted(prompt: false) else {
+            statusBarController.triggerErrorBlink(
+                message: L10n.tr(ru: "Требуется Универсальный доступ", en: "Accessibility permission required")
+            )
+            SettingsWindowController.shared.show()
+            return
+        }
+
+        let taskId = UUID()
+        currentTranslateTaskId = taskId
         currentTranslateTask?.cancel()
         currentTranslateTask = Task { [weak self] in
             guard let self = self else { return }
 
             guard let selection = await self.textCapture.captureSelection(),
                   !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                if !Task.isCancelled {
+                if !Task.isCancelled && self.currentTranslateTaskId == taskId {
                     self.statusBarController.triggerErrorBlink(
                         message: L10n.tr(ru: "Выделите текст для перевода", en: "Select text to translate")
                     )
@@ -92,12 +146,13 @@ public final class AppCoordinator {
                 return
             }
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled && self.currentTranslateTaskId == taskId else { return }
 
             let targetLanguage = self.settings.targetLanguage
             let originalText = selection.text
             let apiKey = self.settings.geminiApiKey
             let modelId = self.settings.selectedModelId
+            let targetPID = selection.frontmostAppPID
 
             let location: FloatingTranslationPanel.EitherPointOrRect
             if let bounds = selection.bounds {
@@ -125,12 +180,13 @@ public final class AppCoordinator {
                     model: modelId,
                     onChunk: { [weak self] partialText in
                         Task { @MainActor [weak self] in
-                            guard let self = self, !Task.isCancelled else { return }
+                            guard let self = self, self.currentTranslateTaskId == taskId, !Task.isCancelled else { return }
                             self.statusBarController.setLoading(false)
                             self.translationPanel.updateTranslation(
                                 originalText: originalText,
                                 translatedText: partialText,
                                 targetLanguage: targetLanguage,
+                                isStreaming: true,
                                 onCopy: {
                                     let pasteboard = NSPasteboard.general
                                     pasteboard.clearContents()
@@ -138,6 +194,15 @@ public final class AppCoordinator {
                                 },
                                 onReplace: { [weak self] in
                                     guard let self = self else { return }
+                                    self.translationPanel.dismiss()
+                                    if let targetPID = targetPID,
+                                       let currentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                                       targetPID != currentPID {
+                                        self.statusBarController.triggerErrorBlink(
+                                            message: L10n.tr(ru: "Активное окно изменилось во время обработки", en: "Active window changed during processing")
+                                        )
+                                        return
+                                    }
                                     self.currentReplaceTask?.cancel()
                                     self.currentReplaceTask = Task { [weak self] in
                                         _ = await self?.textCapture.replaceSelection(with: partialText)
@@ -148,7 +213,7 @@ public final class AppCoordinator {
                     }
                 )
 
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled && self.currentTranslateTaskId == taskId else {
                     self.statusBarController.setLoading(false)
                     return
                 }
@@ -159,6 +224,7 @@ public final class AppCoordinator {
                     originalText: originalText,
                     translatedText: translated,
                     targetLanguage: targetLanguage,
+                    isStreaming: false,
                     onCopy: {
                         let pasteboard = NSPasteboard.general
                         pasteboard.clearContents()
@@ -166,6 +232,15 @@ public final class AppCoordinator {
                     },
                     onReplace: { [weak self] in
                         guard let self = self else { return }
+                        self.translationPanel.dismiss()
+                        if let targetPID = targetPID,
+                           let currentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+                           targetPID != currentPID {
+                            self.statusBarController.triggerErrorBlink(
+                                message: L10n.tr(ru: "Активное окно изменилось во время обработки", en: "Active window changed during processing")
+                            )
+                            return
+                        }
                         self.currentReplaceTask?.cancel()
                         self.currentReplaceTask = Task { [weak self] in
                             _ = await self?.textCapture.replaceSelection(with: translated)
@@ -173,7 +248,7 @@ public final class AppCoordinator {
                     }
                 )
             } catch {
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled && self.currentTranslateTaskId == taskId else {
                     self.statusBarController.setLoading(false)
                     return
                 }
@@ -193,13 +268,27 @@ public final class AppCoordinator {
     // MARK: - Scenario 2: In-place Proofreading / Rewrite
 
     private func handleRewriteTrigger() {
+        currentTranslateTaskId = UUID()
+        currentTranslateTask?.cancel()
+        currentTranslateTask = nil
+        translationPanel?.dismiss()
+
+        guard TextCaptureService.isAccessibilityGranted(prompt: false) else {
+            statusBarController.triggerErrorBlink(
+                message: L10n.tr(ru: "Требуется Универсальный доступ", en: "Accessibility permission required")
+            )
+            return
+        }
+
+        let taskId = UUID()
+        currentRewriteTaskId = taskId
         currentRewriteTask?.cancel()
         currentRewriteTask = Task { [weak self] in
             guard let self = self else { return }
 
             guard let selection = await self.textCapture.captureSelection(),
                   !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                if !Task.isCancelled {
+                if !Task.isCancelled && self.currentRewriteTaskId == taskId {
                     self.statusBarController.triggerErrorBlink(
                         message: L10n.tr(ru: "Выделите текст для исправления", en: "Select text to improve")
                     )
@@ -207,7 +296,7 @@ public final class AppCoordinator {
                 return
             }
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled && self.currentRewriteTaskId == taskId else { return }
 
             let originalText = selection.text
             let mode = self.settings.rewriteMode
@@ -225,7 +314,8 @@ public final class AppCoordinator {
                     model: modelId
                 )
 
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled && self.currentRewriteTaskId == taskId else {
+                    guard self.currentRewriteTaskId == taskId else { return }
                     self.statusBarController.setLoading(false)
                     return
                 }
@@ -234,6 +324,7 @@ public final class AppCoordinator {
                 if let targetPID = targetPID,
                    let currentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier,
                    targetPID != currentPID {
+                    guard self.currentRewriteTaskId == taskId else { return }
                     self.statusBarController.setLoading(false)
                     self.statusBarController.triggerErrorBlink(
                         message: L10n.tr(ru: "Активное окно изменилось во время обработки", en: "Active window changed during processing")
@@ -241,10 +332,12 @@ public final class AppCoordinator {
                     return
                 }
 
+                guard self.currentRewriteTaskId == taskId else { return }
                 self.statusBarController.setLoading(false)
 
                 // Replace selected text in active app
                 let success = await self.textCapture.replaceSelection(with: corrected)
+                guard self.currentRewriteTaskId == taskId else { return }
                 if success {
                     self.statusBarController.triggerSuccessFlash()
                 } else {
@@ -254,11 +347,13 @@ public final class AppCoordinator {
                     )
                 }
             } catch {
-                guard !Task.isCancelled else {
+                guard !Task.isCancelled && self.currentRewriteTaskId == taskId else {
+                    guard self.currentRewriteTaskId == taskId else { return }
                     self.statusBarController.setLoading(false)
                     return
                 }
                 // If anything fails, original text remains untouched in active app!
+                guard self.currentRewriteTaskId == taskId else { return }
                 self.statusBarController.setLoading(false)
                 self.statusBarController.triggerErrorBlink(message: error.localizedDescription)
             }
