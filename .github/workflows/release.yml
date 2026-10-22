@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag (e.g. v1.0.1)'
+        description: 'Release tag (e.g. v1.0.2)'
         required: true
-        default: 'v1.0.1'
+        default: 'v1.0.2'
 
 permissions:
   contents: write
@@ -33,14 +33,7 @@ jobs:
         run: ./scripts/build_app.sh
 
       - name: Create DMG Installer
-        run: |
-          ./scripts/create_dmg.sh
-          shasum -a 256 LightL.dmg > LightL.dmg.sha256
-
-      - name: Archive Application ZIP
-        run: |
-          ditto -c -k --sequesterRsrc --keepParent LightL.app LightL-macOS.zip
-          shasum -a 256 LightL-macOS.zip > LightL-macOS.zip.sha256
+        run: ./scripts/create_dmg.sh
 
       - name: Determine Release Tag
         id: release_tag
@@ -56,11 +49,7 @@ jobs:
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           name: LightL ${{ steps.release_tag.outputs.tag }}
-          files: |
-            LightL.dmg
-            LightL.dmg.sha256
-            LightL-macOS.zip
-            LightL-macOS.zip.sha256
+          files: LightL.dmg
           generate_release_notes: true
           draft: false
           prerelease: false
