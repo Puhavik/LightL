@@ -36,7 +36,10 @@ fi
 
 if [ -n "$DEV_IDENTITY" ] && [ "$DEV_IDENTITY" != "-" ]; then
     echo "==> Signing ${DMG_NAME} with ${DEV_IDENTITY}..."
-    codesign --force --timestamp --sign "${DEV_IDENTITY}" "${DMG_PATH}"
+    if ! codesign --force --timestamp --sign "${DEV_IDENTITY}" "${DMG_PATH}" 2>/dev/null; then
+        echo "==> DMG signing with ${DEV_IDENTITY} failed, falling back to ad-hoc..."
+        codesign --force --sign - "${DMG_PATH}" 2>/dev/null || true
+    fi
 else
     echo "==> No signing identity provided or found, skipping DMG signing."
 fi

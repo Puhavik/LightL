@@ -117,9 +117,12 @@ if [ -f "${PROJECT_DIR}/LightL.entitlements" ]; then
     ENTITLEMENTS_ARG=(--entitlements "${PROJECT_DIR}/LightL.entitlements")
 fi
 
-if [ -n "$DEV_IDENTITY" ]; then
-    echo "==> Signing ${APP_NAME}.app with stable developer certificate: ${DEV_IDENTITY}..."
-    codesign --force --deep --options runtime --timestamp "${ENTITLEMENTS_ARG[@]}" --sign "${DEV_IDENTITY}" "${APP_BUNDLE}"
+if [ -n "$DEV_IDENTITY" ] && [ "$DEV_IDENTITY" != "-" ]; then
+    echo "==> Signing ${APP_NAME}.app with developer certificate: ${DEV_IDENTITY}..."
+    if ! codesign --force --deep --options runtime --timestamp "${ENTITLEMENTS_ARG[@]}" --sign "${DEV_IDENTITY}" "${APP_BUNDLE}" 2>/dev/null; then
+        echo "==> Developer ID signing failed (identity not found or expired), falling back to ad-hoc..."
+        codesign --force --deep --options runtime "${ENTITLEMENTS_ARG[@]}" --sign - "${APP_BUNDLE}"
+    fi
 else
     echo "==> Signing ${APP_NAME}.app (ad-hoc)..."
     codesign --force --deep --options runtime "${ENTITLEMENTS_ARG[@]}" --sign - "${APP_BUNDLE}"
