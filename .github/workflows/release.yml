@@ -35,22 +35,47 @@ jobs:
       - name: Create DMG Installer
         run: ./scripts/create_dmg.sh
 
-      - name: Determine Release Tag
-        id: release_tag
+      - name: Determine Release Tag & Extract Changelog
+        id: release_info
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "tag=${{ github.event.inputs.tag_name }}" >> $GITHUB_OUTPUT
+            TAG="${{ github.event.inputs.tag_name }}"
           else
-            echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+
+          # Extract matching section from CHANGELOG.md
+          python3 -c "
+          import sys, re
+          tag = '${TAG}'.lstrip('v')
+          try:
+              with open('CHANGELOG.md', 'r') as f:
+                  content = f.read()
+              pattern = rf'## \[{re.escape(tag)}\][^\n]*\n(.*?)(?=\n## \[|\Z)'
+              m = re.search(pattern, content, re.DOTALL)
+              if m:
+                  notes = m.group(1).strip()
+                  with open('release_notes.md', 'w') as out:
+                      out.write(notes + '\n')
+                  print('Extracted release notes for', tag)
+          except Exception as e:
+              print('Could not extract notes:', e)
+          "
+          if [ -s "release_notes.md" ]; then
+            echo "has_notes=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_notes=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.release_tag.outputs.tag }}
-          name: LightL ${{ steps.release_tag.outputs.tag }}
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: LightL ${{ steps.release_info.outputs.tag }}
+          body_path: ${{ steps.release_info.outputs.has_notes == 'true' && 'release_notes.md' || '' }}
+          generate_release_notes: ${{ steps.release_info.outputs.has_notes != 'true' }}
           files: LightL.dmg
-          generate_release_notes: true
           draft: false
           prerelease: false
         env:
