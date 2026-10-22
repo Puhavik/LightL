@@ -41,22 +41,19 @@ Powered by **Google Gemini API** (recommended `gemini-3.5-flash-lite` or flagshi
 
 ## 🚀 Installation & Launch
 
-### Prebuilt Binary
-1. Download `LightL-macOS.zip` from [GitHub Releases](https://github.com/Puhavik/LightL/releases/latest).
-2. Unzip and copy `LightL.app` to `/Applications/`:
-   ```bash
-   cp -R LightL.app /Applications/
-   open /Applications/LightL.app
-   ```
-*(On first launch, if macOS Gatekeeper prompts for ad-hoc signature, Right-click `LightL.app` → select **Open**).*
+### Prebuilt DMG Installer (Recommended)
+1. Download **`LightL.dmg`** from [GitHub Releases](https://github.com/Puhavik/LightL/releases/latest).
+2. Open `LightL.dmg` and drag **LightL** into your **Applications** folder.
+3. Launch **LightL** from Applications or Spotlight.
+*(On first launch, if macOS Gatekeeper prompts for an untrusted developer warning, Right-click `LightL.app` → select **Open**).*
 
 ### Build From Source
 Requirements: macOS 15.0+ and Xcode 16.0+ (Swift 6.0).
 ```bash
 git clone https://github.com/Puhavik/LightL.git
 cd LightL
-./scripts/build_app.sh
-open LightL.app
+./scripts/create_dmg.sh
+open LightL.dmg
 ```
 
 ---
