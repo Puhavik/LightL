@@ -2,14 +2,31 @@ import Foundation
 import AppKit
 
 @MainActor
-public final class StatusBarController: NSObject {
+public final class StatusBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
-    private var blinkTask: Task<Void, Never>?
+    private var activeAnimationTask: Task<Void, Never>?
+    private var settingsObserver: (any NSObjectProtocol)?
+    public private(set) var isMenuVisible = false
 
     private let errorIconName = "exclamationmark.triangle.fill"
     private let loadingIconName = "arrow.triangle.2.circlepath"
 
+    public static var appVersion: String {
+        let raw = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
+            ?? (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
+            ?? "1.1.0"
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty { return "v1.1.0" }
+        return trimmed.hasPrefix("v") ? trimmed : "v\(trimmed)"
+    }
+
     public static let defaultMenuBarIcon: NSImage = {
+        #if SWIFT_PACKAGE
+        if let img = Bundle.module.image(forResource: "MenuBarIcon") {
+            img.isTemplate = true
+            return img
+        }
+        #endif
         if let img = Bundle.main.image(forResource: "MenuBarIcon") {
             img.isTemplate = true
             return img
@@ -75,36 +92,68 @@ public final class StatusBarController: NSObject {
         if let button = statusItem?.button {
             button.image = normalIcon
             button.imagePosition = .imageOnly
-            button.toolTip = "LightL — AI переводчик и редактор"
+            button.toolTip = L10n.tr(ru: "LightL — AI переводчик и редактор", en: "LightL — AI Translator & Editor")
         }
         rebuildMenu()
     }
 
     private func observeSettings() {
-        NotificationCenter.default.addObserver(
+        if let existing = settingsObserver {
+            NotificationCenter.default.removeObserver(existing)
+        }
+        settingsObserver = NotificationCenter.default.addObserver(
             forName: AppSettings.didChangeNotification,
             object: nil,
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
-                self?.rebuildMenu()
+                guard let self = self, !self.isMenuVisible else { return }
+                self.rebuildMenu()
             }
         }
     }
 
     public func destroy() {
         stopBlinking()
+        if let obs = settingsObserver {
+            NotificationCenter.default.removeObserver(obs)
+            settingsObserver = nil
+        }
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
     }
 
-    public func rebuildMenu() {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
+    isolated deinit {
+        destroy()
+    }
 
-        // Title item
+    public func rebuildMenu() {
+        guard !isMenuVisible else { return }
+        let menu = statusItem?.menu ?? NSMenu()
+        menu.autoenablesItems = false
+        menu.delegate = self
+        populateMenu(menu)
+        statusItem?.menu = menu
+    }
+
+    public func menuNeedsUpdate(_ menu: NSMenu) {
+        populateMenu(menu)
+    }
+
+    public func menuWillOpen(_ menu: NSMenu) {
+        isMenuVisible = true
+    }
+
+    public func menuDidClose(_ menu: NSMenu) {
+        isMenuVisible = false
+    }
+
+    private func populateMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
+
+        // Title item with version in top-right corner
         let titleItem = NSMenuItem(title: "LightL AI", action: nil, keyEquivalent: "")
         titleItem.isEnabled = false
         if let font = NSFont.boldSystemFont(ofSize: 12) as NSFont? {
@@ -113,6 +162,8 @@ public final class StatusBarController: NSObject {
                 attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]
             )
         }
+        titleItem.badge = NSMenuItemBadge(string: Self.appVersion)
+        titleItem.toolTip = L10n.tr(ru: "Версия LightL: \(Self.appVersion)", en: "LightL Version: \(Self.appVersion)")
         menu.addItem(titleItem)
 
         // API Status indicator
@@ -173,17 +224,17 @@ public final class StatusBarController: NSObject {
 
         menu.addItem(NSMenuItem.separator())
 
-        // Accessibility status
+        // Accessibility status (shown ONLY when access is NOT granted)
         let isAxGranted = TextCaptureService.isAccessibilityGranted(prompt: false)
-        let axItem = NSMenuItem(
-            title: isAxGranted
-                ? L10n.tr(ru: "✓ Универсальный доступ: Разрешен", en: "✓ Accessibility: Granted")
-                : L10n.tr(ru: "⚠ Требуется Универсальный доступ", en: "⚠ Accessibility Required"),
-            action: #selector(openAccessibilityAction),
-            keyEquivalent: ""
-        )
-        axItem.target = self
-        menu.addItem(axItem)
+        if !isAxGranted {
+            let axItem = NSMenuItem(
+                title: L10n.tr(ru: "⚠ Требуется Универсальный доступ", en: "⚠ Accessibility Required"),
+                action: #selector(openAccessibilityAction),
+                keyEquivalent: ""
+            )
+            axItem.target = self
+            menu.addItem(axItem)
+        }
 
         // Settings
         let settingsItem = NSMenuItem(
@@ -204,8 +255,6 @@ public final class StatusBarController: NSObject {
         )
         quitItem.target = self
         menu.addItem(quitItem)
-
-        statusItem?.menu = menu
     }
 
     // MARK: - Status Visual States
@@ -228,11 +277,11 @@ public final class StatusBarController: NSObject {
     /// Triggers the blinking error animation in the Menu Bar icon
     public func triggerErrorBlink(message: String) {
         guard let button = statusItem?.button else { return }
-        stopBlinking()
+        stopActiveAnimation()
 
         button.toolTip = L10n.tr(ru: "Ошибка: \(message)", en: "Error: \(message)")
 
-        blinkTask = Task { @MainActor [weak self] in
+        activeAnimationTask = Task { @MainActor [weak self] in
             guard let self = self else { return }
             let maxBlinks = 6
             for i in 0..<maxBlinks {
@@ -257,9 +306,11 @@ public final class StatusBarController: NSObject {
 
     public func triggerSuccessFlash() {
         guard let button = statusItem?.button else { return }
+        stopActiveAnimation()
         button.contentTintColor = NSColor.systemGreen
-        Task { @MainActor [weak self] in
+        activeAnimationTask = Task { @MainActor [weak self] in
             try? await Task.sleep(nanoseconds: 1_000_000_000)
+            guard !Task.isCancelled else { return }
             self?.resetNormalIcon()
         }
     }
@@ -268,12 +319,16 @@ public final class StatusBarController: NSObject {
         guard let button = statusItem?.button else { return }
         button.image = normalIcon
         button.contentTintColor = nil
-        button.toolTip = "LightL — AI переводчик и редактор"
+        button.toolTip = L10n.tr(ru: "LightL — AI переводчик и редактор", en: "LightL — AI Translator & Editor")
     }
 
     private func stopBlinking() {
-        blinkTask?.cancel()
-        blinkTask = nil
+        stopActiveAnimation()
+    }
+
+    private func stopActiveAnimation() {
+        activeAnimationTask?.cancel()
+        activeAnimationTask = nil
         resetNormalIcon()
     }
 

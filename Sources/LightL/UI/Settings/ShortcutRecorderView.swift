@@ -29,13 +29,20 @@ final class ShortcutRecorderController {
 
             // Require at least one modifier
             if carbonModifiers != 0 {
+                // Blacklist for system reserved shortcuts: reject standalone ⌘C, ⌘V, ⌘X, ⌘Z, ⌘A, ⌘Q, ⌘W, ⌘Space, ⌘Tab
+                if ShortcutModel.isSystemReserved(keyCode: UInt32(event.keyCode), modifiers: carbonModifiers) {
+                    NSSound.beep()
+                    return nil
+                }
+
                 let captured = ShortcutModel(keyCode: UInt32(event.keyCode), modifiers: carbonModifiers)
                 self.stopRecording()
                 onCaptured(captured)
                 return nil
             }
 
-            return event
+            NSSound.beep()
+            return nil
         }
     }
 
@@ -46,23 +53,32 @@ final class ShortcutRecorderController {
             localMonitor = nil
         }
     }
+
+    isolated deinit {
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+    }
 }
 
 public struct ShortcutRecorderView: View {
     public let label: String
     @Binding public var shortcut: ShortcutModel
+    public var defaultShortcut: ShortcutModel?
 
     @State private var controller = ShortcutRecorderController()
     @State private var isRecording = false
     @State private var isHovered = false
+    @State private var isResetHovered = false
 
-    public init(label: String, shortcut: Binding<ShortcutModel>) {
+    public init(label: String, shortcut: Binding<ShortcutModel>, defaultShortcut: ShortcutModel? = nil) {
         self.label = label
         self._shortcut = shortcut
+        self.defaultShortcut = defaultShortcut
     }
 
     public var body: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 10) {
             Text(label)
                 .font(.system(size: 13, weight: .regular))
                 .foregroundColor(.primary)
@@ -130,6 +146,51 @@ public struct ShortcutRecorderView: View {
                     : L10n.tr(ru: "Сочетание клавиш: \(shortcut.displayString). Нажмите для изменения", en: "Shortcut: \(shortcut.displayString). Click to change")
             )
             .onHover { isHovered = $0 }
+
+            if let defaultShortcut = defaultShortcut {
+                let isModified = (shortcut != defaultShortcut)
+                Button(action: {
+                    if isRecording {
+                        controller.stopRecording()
+                        isRecording = false
+                    }
+                    withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                        self.shortcut = defaultShortcut
+                    }
+                    NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.counterclockwise")
+                            .font(.system(size: 10, weight: .semibold))
+                        Text(L10n.tr(ru: "Сбросить", en: "Reset"))
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(isModified ? .primary : .secondary.opacity(0.6))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .fill(isResetHovered
+                                ? Color.primary.opacity(0.10)
+                                : (isModified ? Color.primary.opacity(0.06) : Color.primary.opacity(0.03)))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6, style: .continuous)
+                            .strokeBorder(
+                                isModified
+                                    ? Color.accentColor.opacity(0.3)
+                                    : (isResetHovered ? Color.primary.opacity(0.12) : Color.clear),
+                                lineWidth: 1
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+                .onHover { isResetHovered = $0 }
+                .help(isModified
+                    ? L10n.tr(ru: "Сбросить на сочетание по умолчанию (\(defaultShortcut.displayString))", en: "Reset to default shortcut (\(defaultShortcut.displayString))")
+                    : L10n.tr(ru: "Уже установлено сочетание по умолчанию (\(defaultShortcut.displayString))", en: "Already set to default (\(defaultShortcut.displayString))"))
+                .accessibilityLabel(L10n.tr(ru: "Сбросить сочетание клавиш на значение по умолчанию", en: "Reset shortcut to default"))
+            }
         }
         .onDisappear {
             controller.stopRecording()

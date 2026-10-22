@@ -11,7 +11,7 @@ public struct MacOS27LiquidGlass: ViewModifier {
         content
             .background(
                 ZStack {
-                    VisualEffectView(material: .popover, blendingMode: .behindWindow)
+                    VisualEffectView(material: .popover, blendingMode: .behindWindow, cornerRadius: cornerRadius)
                     
                     // Liquid Glass meta-material dynamic tint
                     LinearGradient(
@@ -58,6 +58,7 @@ public struct MacOS27ContentCard: ViewModifier {
 
     public func body(content: Content) -> some View {
         content
+            .clipShape(RoundedRectangle(cornerRadius: cornerRadius, style: .continuous))
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .fill(Color(nsColor: .controlBackgroundColor).opacity(colorScheme == .dark ? 0.70 : 0.82))
@@ -172,12 +173,13 @@ public struct MacOS27GlassPillButtonStyle: ButtonStyle {
         if isProminent {
             LinearGradient(
                 colors: [
-                    Color.accentColor.opacity(isPressed ? 0.85 : (isHovered ? 1.0 : 0.92)),
-                    Color.accentColor.opacity(isPressed ? 0.75 : 0.82)
+                    Color(red: 0.12, green: 0.45, blue: 0.95),
+                    Color(red: 0.05, green: 0.32, blue: 0.85)
                 ],
                 startPoint: .top,
                 endPoint: .bottom
             )
+            .opacity(isPressed ? 0.85 : (isHovered ? 1.0 : 0.92))
         } else {
             ZStack {
                 VisualEffectView(material: .selection, blendingMode: .withinWindow)
@@ -206,7 +208,7 @@ public struct MacOS27GlassPillButtonStyle: ButtonStyle {
 
     private var shadowColor: Color {
         if isProminent {
-            return Color.accentColor.opacity(0.35)
+            return Color(red: 0.12, green: 0.45, blue: 0.95).opacity(0.35)
         }
         return Color.black.opacity(colorScheme == .dark ? 0.25 : 0.08)
     }

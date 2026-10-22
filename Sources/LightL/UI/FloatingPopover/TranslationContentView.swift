@@ -5,6 +5,7 @@ public struct TranslationContentView: View {
     public let originalText: String
     public let translatedText: String?
     public let isLoading: Bool
+    public let isStreaming: Bool
     public let errorMessage: String?
     public let targetLanguage: LanguageModel
     public let onCopy: () -> Void
@@ -18,6 +19,7 @@ public struct TranslationContentView: View {
         originalText: String,
         translatedText: String?,
         isLoading: Bool,
+        isStreaming: Bool = false,
         errorMessage: String?,
         targetLanguage: LanguageModel,
         onCopy: @escaping () -> Void,
@@ -27,6 +29,7 @@ public struct TranslationContentView: View {
         self.originalText = originalText
         self.translatedText = translatedText
         self.isLoading = isLoading
+        self.isStreaming = isStreaming
         self.errorMessage = errorMessage
         self.targetLanguage = targetLanguage
         self.onCopy = onCopy
@@ -70,7 +73,7 @@ public struct TranslationContentView: View {
 
                 Text(targetLanguage.nativeName)
                     .font(.system(size: 11, weight: .regular))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.primary.opacity(0.72))
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
@@ -88,7 +91,7 @@ public struct TranslationContentView: View {
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.primary.opacity(0.72))
                     .frame(width: 22, height: 22)
                     .background(
                         Circle()
@@ -112,7 +115,7 @@ public struct TranslationContentView: View {
 
                     Text(L10n.tr(ru: "Перевод через Gemini...", en: "Translating with Gemini..."))
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary.opacity(0.72))
                 }
                 .frame(maxWidth: .infinity, minHeight: 110)
             } else if let error = errorMessage {
@@ -129,7 +132,7 @@ public struct TranslationContentView: View {
 
                     Text(error)
                         .font(.system(size: 12))
-                        .foregroundColor(.secondary)
+                        .foregroundColor(.primary.opacity(0.72))
                         .lineSpacing(2)
                 }
                 .padding(14)
@@ -171,12 +174,20 @@ public struct TranslationContentView: View {
 
                 Button(action: onReplace) {
                     HStack(spacing: 5) {
-                        Image(systemName: "arrow.triangle.2.circlepath")
-                            .font(.system(size: 11, weight: .semibold))
+                        if isStreaming {
+                            ProgressView()
+                                .scaleEffect(0.55)
+                                .frame(width: 11, height: 11)
+                        } else {
+                            Image(systemName: "arrow.triangle.2.circlepath")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
                         Text(L10n.tr(ru: "Заменить", en: "Replace"))
                     }
                 }
                 .buttonStyle(MacOS27GlassPillButtonStyle(isProminent: true))
+                .disabled(isLoading || isStreaming)
+                .opacity((isLoading || isStreaming) ? 0.6 : 1.0)
             }
 
             Spacer()
@@ -185,7 +196,7 @@ public struct TranslationContentView: View {
                 MacOS27Keycap("⎋")
                 Text(L10n.tr(ru: "закрыть", en: "close"))
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.primary.opacity(0.72))
             }
         }
         .padding(.top, 2)
@@ -196,22 +207,34 @@ public struct TranslationContentView: View {
 public struct VisualEffectView: NSViewRepresentable {
     public let material: NSVisualEffectView.Material
     public let blendingMode: NSVisualEffectView.BlendingMode
+    public var cornerRadius: CGFloat
 
-    public init(material: NSVisualEffectView.Material, blendingMode: NSVisualEffectView.BlendingMode) {
+    public init(
+        material: NSVisualEffectView.Material,
+        blendingMode: NSVisualEffectView.BlendingMode,
+        cornerRadius: CGFloat = 0
+    ) {
         self.material = material
         self.blendingMode = blendingMode
+        self.cornerRadius = cornerRadius
+    }
+
+    public func apply(to view: NSVisualEffectView) {
+        view.material = material
+        view.blendingMode = blendingMode
+        view.state = .active
+        view.wantsLayer = true
+        view.layer?.cornerRadius = cornerRadius
+        view.layer?.masksToBounds = cornerRadius > 0
     }
 
     public func makeNSView(context: Context) -> NSVisualEffectView {
         let view = NSVisualEffectView()
-        view.material = material
-        view.blendingMode = blendingMode
-        view.state = .active
+        apply(to: view)
         return view
     }
 
     public func updateNSView(_ nsView: NSVisualEffectView, context: Context) {
-        nsView.material = material
-        nsView.blendingMode = blendingMode
+        apply(to: nsView)
     }
 }

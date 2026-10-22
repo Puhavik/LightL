@@ -5,14 +5,39 @@ import Carbon
 
 @MainActor
 public final class FloatingTranslationPanel: NSPanel {
+    public var onDismiss: (() -> Void)?
+
     private var clickMonitor: Any?
     private var escGlobalMonitor: Any?
     private var escLocalMonitor: Any?
+    private var spaceChangeObserver: (any NSObjectProtocol)?
     private var hostingView: NSHostingView<TranslationContentView>?
     private var currentPosition: EitherPointOrRect?
+    private var isPlacedAbove: Bool = false
 
     public override var canBecomeKey: Bool {
         return true
+    }
+
+    public override var canBecomeMain: Bool {
+        return false
+    }
+
+    public override func resignKey() {
+        super.resignKey()
+        dismiss()
+    }
+
+    public override func cancelOperation(_ sender: Any?) {
+        dismiss()
+    }
+
+    public override func keyDown(with event: NSEvent) {
+        if event.keyCode == UInt16(kVK_Escape) {
+            dismiss()
+            return
+        }
+        super.keyDown(with: event)
     }
 
     public init() {
@@ -45,6 +70,7 @@ public final class FloatingTranslationPanel: NSPanel {
             originalText: originalText,
             translatedText: nil,
             isLoading: true,
+            isStreaming: false,
             errorMessage: nil,
             targetLanguage: targetLanguage,
             onCopy: onCopy,
@@ -52,7 +78,8 @@ public final class FloatingTranslationPanel: NSPanel {
         )
 
         positionWindow(near: pointOrRect)
-        self.orderFront(nil)
+        self.makeKeyAndOrderFront(nil)
+        self.makeKey()
         startMonitors()
     }
 
@@ -60,6 +87,7 @@ public final class FloatingTranslationPanel: NSPanel {
         originalText: String,
         translatedText: String,
         targetLanguage: LanguageModel,
+        isStreaming: Bool = false,
         onCopy: @escaping () -> Void,
         onReplace: @escaping () -> Void
     ) {
@@ -67,15 +95,12 @@ public final class FloatingTranslationPanel: NSPanel {
             originalText: originalText,
             translatedText: translatedText,
             isLoading: false,
+            isStreaming: isStreaming,
             errorMessage: nil,
             targetLanguage: targetLanguage,
             onCopy: onCopy,
             onReplace: onReplace
         )
-
-        if let pos = currentPosition {
-            positionWindow(near: pos)
-        }
     }
 
     public func showError(
@@ -89,27 +114,29 @@ public final class FloatingTranslationPanel: NSPanel {
             originalText: originalText,
             translatedText: nil,
             isLoading: false,
+            isStreaming: false,
             errorMessage: error,
             targetLanguage: targetLanguage,
             onCopy: onCopy,
             onReplace: onReplace
         )
-
-        if let pos = currentPosition {
-            positionWindow(near: pos)
-        }
     }
 
     public func dismiss() {
         self.orderOut(nil)
         stopMonitors()
         self.currentPosition = nil
+        self.isPlacedAbove = false
+        self.contentView = nil
+        self.hostingView = nil
+        onDismiss?()
     }
 
     private func updateContent(
         originalText: String,
         translatedText: String?,
         isLoading: Bool,
+        isStreaming: Bool = false,
         errorMessage: String?,
         targetLanguage: LanguageModel,
         onCopy: @escaping () -> Void,
@@ -119,6 +146,7 @@ public final class FloatingTranslationPanel: NSPanel {
             originalText: originalText,
             translatedText: translatedText,
             isLoading: isLoading,
+            isStreaming: isStreaming,
             errorMessage: errorMessage,
             targetLanguage: targetLanguage,
             onCopy: onCopy,
@@ -127,6 +155,11 @@ public final class FloatingTranslationPanel: NSPanel {
                 Task { @MainActor in
                     // Small delay to allow macOS WindowServer to restore active focus to the target app
                     try? await Task.sleep(nanoseconds: 80_000_000)
+                    if #available(macOS 14.0, *) {
+                        NSWorkspace.shared.frontmostApplication?.activate()
+                    } else {
+                        NSWorkspace.shared.frontmostApplication?.activate(options: .activateIgnoringOtherApps)
+                    }
                     onReplace()
                 }
             },
@@ -143,14 +176,45 @@ public final class FloatingTranslationPanel: NSPanel {
             self.hostingView = hosting
         }
 
-        // Adjust window size based on fitting size
+        // Adjust window size based on fitting size, keeping anchored
         if let hosting = hostingView {
             hosting.layoutSubtreeIfNeeded()
             let fitting = hosting.fittingSize
-            var frame = self.frame
-            frame.size = fitting
-            self.setFrame(frame, display: true, animate: false)
+            let oldFrame = self.frame
+
+            var targetOrigin = oldFrame.origin
+            if self.isVisible && oldFrame.height > 0 {
+                // If placed below rect (or near point), anchor the TOP edge: newOrigin.y = oldFrame.maxY - fitting.height
+                // If placed above rect, anchor the BOTTOM edge: newOrigin.y = oldFrame.minY
+                targetOrigin.y = isPlacedAbove ? oldFrame.minY : (oldFrame.maxY - fitting.height)
+
+                // Clamp targetOrigin within screenFrame bounds
+                if let screen = self.screen ?? (currentPosition.flatMap { findTargetScreen(for: $0) }) ?? NSScreen.main ?? NSScreen.screens.first {
+                    let screenFrame = screen.visibleFrame
+                    let minX = screenFrame.minX + 10
+                    let maxX = screenFrame.maxX - fitting.width - 10
+                    if maxX >= minX {
+                        targetOrigin.x = min(max(targetOrigin.x, minX), maxX)
+                    } else {
+                        targetOrigin.x = minX
+                    }
+
+                    let minY = screenFrame.minY + 10
+                    let maxY = screenFrame.maxY - fitting.height - 10
+                    if maxY >= minY {
+                        targetOrigin.y = min(max(targetOrigin.y, minY), maxY)
+                    } else {
+                        targetOrigin.y = minY
+                    }
+                }
+            }
+
+            self.setFrame(NSRect(origin: targetOrigin, size: fitting), display: true, animate: false)
         }
+    }
+
+    isolated deinit {
+        stopMonitors()
     }
 
     private func findTargetScreen(for pointOrRect: EitherPointOrRect) -> NSScreen? {
@@ -179,26 +243,39 @@ public final class FloatingTranslationPanel: NSPanel {
             targetOrigin = CGPoint(x: x, y: y)
 
             // If it falls below screen bottom, place it above selection
-            if targetOrigin.y < screenFrame.minY {
+            if targetOrigin.y < screenFrame.minY + 10 {
                 targetOrigin.y = rect.maxY + 8
+                isPlacedAbove = true
+            } else {
+                isPlacedAbove = false
             }
         case .point(let pt):
             // Place slightly to bottom-right of mouse pointer
             targetOrigin = CGPoint(x: pt.x + 8, y: pt.y - panelSize.height - 8)
+            // If near bottom edge of screen, place above mouse pointer
+            if targetOrigin.y < screenFrame.minY + 10 {
+                targetOrigin.y = pt.y + 16
+                isPlacedAbove = true
+            } else {
+                isPlacedAbove = false
+            }
         }
 
         // Keep inside screen bounds
-        if targetOrigin.x + panelSize.width > screenFrame.maxX - 10 {
-            targetOrigin.x = screenFrame.maxX - panelSize.width - 10
+        let minX = screenFrame.minX + 10
+        let maxX = screenFrame.maxX - panelSize.width - 10
+        if maxX >= minX {
+            targetOrigin.x = min(max(targetOrigin.x, minX), maxX)
+        } else {
+            targetOrigin.x = minX
         }
-        if targetOrigin.x < screenFrame.minX + 10 {
-            targetOrigin.x = screenFrame.minX + 10
-        }
-        if targetOrigin.y < screenFrame.minY + 10 {
-            targetOrigin.y = screenFrame.minY + 10
-        }
-        if targetOrigin.y + panelSize.height > screenFrame.maxY - 10 {
-            targetOrigin.y = screenFrame.maxY - panelSize.height - 10
+
+        let minY = screenFrame.minY + 10
+        let maxY = screenFrame.maxY - panelSize.height - 10
+        if maxY >= minY {
+            targetOrigin.y = min(max(targetOrigin.y, minY), maxY)
+        } else {
+            targetOrigin.y = minY
         }
 
         self.setFrameOrigin(targetOrigin)
@@ -207,23 +284,38 @@ public final class FloatingTranslationPanel: NSPanel {
     private func startMonitors() {
         stopMonitors()
 
+        spaceChangeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.dismiss()
+            }
+        }
+
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            guard let self = self else { return }
-            let mouseLoc = NSEvent.mouseLocation
-            if !self.frame.contains(mouseLoc) {
-                self.dismiss()
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                let mouseLoc = NSEvent.mouseLocation
+                if !self.frame.contains(mouseLoc) {
+                    self.dismiss()
+                }
             }
         }
 
         escGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
             if event.keyCode == UInt16(kVK_Escape) {
-                self?.dismiss()
+                Task { @MainActor [weak self] in
+                    self?.dismiss()
+                }
             }
         }
 
         escLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self else { return event }
             if event.keyCode == UInt16(kVK_Escape) {
-                self?.dismiss()
+                self.dismiss()
                 return nil
             }
             return event
@@ -231,6 +323,10 @@ public final class FloatingTranslationPanel: NSPanel {
     }
 
     private func stopMonitors() {
+        if let observer = spaceChangeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+            spaceChangeObserver = nil
+        }
         if let monitor = clickMonitor {
             NSEvent.removeMonitor(monitor)
             clickMonitor = nil

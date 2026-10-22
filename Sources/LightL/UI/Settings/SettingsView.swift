@@ -1,67 +1,58 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Tab Enum
+
+enum SettingsTab: String, CaseIterable, Identifiable {
+    case aiModel = "ai_model"
+    case translation = "translation"
+    case rewrite = "rewrite"
+    case permissions = "permissions"
+    case appearance = "appearance"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .aiModel: return L10n.tr(ru: "ИИ и Модель", en: "AI & Model")
+        case .translation: return L10n.tr(ru: "Перевод", en: "Translation")
+        case .rewrite: return L10n.tr(ru: "Исправление", en: "Correction")
+        case .permissions: return L10n.tr(ru: "Разрешения", en: "Permissions")
+        case .appearance: return L10n.tr(ru: "Оформление", en: "Appearance")
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .aiModel: return "sparkles"
+        case .translation: return "character.book.closed.fill"
+        case .rewrite: return "text.badge.checkmark"
+        case .permissions: return "lock.shield.fill"
+        case .appearance: return "slider.horizontal.2.square.on.square"
+        }
+    }
+
+    var iconGradient: [Color] {
+        switch self {
+        case .aiModel:
+            return [Color(red: 0.62, green: 0.38, blue: 0.98), Color(red: 0.44, green: 0.22, blue: 0.88)]
+        case .translation:
+            return [Color(red: 0.18, green: 0.58, blue: 0.98), Color(red: 0.08, green: 0.38, blue: 0.85)]
+        case .rewrite:
+            return [Color(red: 0.15, green: 0.78, blue: 0.55), Color(red: 0.08, green: 0.58, blue: 0.42)]
+        case .permissions:
+            return [Color(red: 0.98, green: 0.58, blue: 0.18), Color(red: 0.88, green: 0.42, blue: 0.08)]
+        case .appearance:
+            return [Color(red: 0.98, green: 0.35, blue: 0.65), Color(red: 0.82, green: 0.18, blue: 0.48)]
+        }
+    }
+}
+
+// MARK: - SettingsView (Main Container)
+
 public struct SettingsView: View {
     @Bindable var settings = AppSettings.shared
-
-    private enum Tab: String, CaseIterable, Identifiable {
-        case aiModel = "ai_model"
-        case translation = "translation"
-        case rewrite = "rewrite"
-        case permissions = "permissions"
-        case appearance = "appearance"
-
-        var id: String { rawValue }
-
-        var title: String {
-            switch self {
-            case .aiModel: return L10n.tr(ru: "ИИ и Модель", en: "AI & Model")
-            case .translation: return L10n.tr(ru: "Перевод", en: "Translation")
-            case .rewrite: return L10n.tr(ru: "Исправление", en: "Correction")
-            case .permissions: return L10n.tr(ru: "Разрешения", en: "Permissions")
-            case .appearance: return L10n.tr(ru: "Оформление", en: "Appearance")
-            }
-        }
-
-        var icon: String {
-            switch self {
-            case .aiModel: return "sparkles"
-            case .translation: return "character.book.closed.fill"
-            case .rewrite: return "text.badge.checkmark"
-            case .permissions: return "lock.shield.fill"
-            case .appearance: return "slider.horizontal.2.square.on.square"
-            }
-        }
-
-        var iconGradient: [Color] {
-            switch self {
-            case .aiModel:
-                return [Color(red: 0.62, green: 0.38, blue: 0.98), Color(red: 0.44, green: 0.22, blue: 0.88)]
-            case .translation:
-                return [Color(red: 0.18, green: 0.58, blue: 0.98), Color(red: 0.08, green: 0.38, blue: 0.85)]
-            case .rewrite:
-                return [Color(red: 0.15, green: 0.78, blue: 0.55), Color(red: 0.08, green: 0.58, blue: 0.42)]
-            case .permissions:
-                return [Color(red: 0.98, green: 0.58, blue: 0.18), Color(red: 0.88, green: 0.42, blue: 0.08)]
-            case .appearance:
-                return [Color(red: 0.98, green: 0.35, blue: 0.65), Color(red: 0.82, green: 0.18, blue: 0.48)]
-            }
-        }
-    }
-
-    private enum ConnectionStatus {
-        case success(String)
-        case failure(String)
-    }
-
-    @State private var selectedTab: Tab = .aiModel
-    @State private var apiKeyInput: String = ""
-    @State private var isTestingApiKey = false
-    @State private var testResult: ConnectionStatus? = nil
-    @State private var isShowingApiKey = false
-    @State private var isAxGranted = TextCaptureService.isAccessibilityGranted()
-    @State private var isCustomModel = false
-    @State private var customModelText = ""
+    @State private var selectedTab: SettingsTab = .aiModel
 
     public init() {}
 
@@ -82,63 +73,40 @@ public struct SettingsView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(width: 680, height: 490)
-        .onAppear {
-            apiKeyInput = settings.geminiApiKey
-            isAxGranted = TextCaptureService.isAccessibilityGranted()
-
-            let isKnown = GeminiModelOption.availableModels.contains { $0.modelId == settings.selectedModelId }
-            if !isKnown {
-                isCustomModel = true
-                customModelText = settings.selectedModelId
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            if TextCaptureService.isAccessibilityGranted() {
+                HotKeyManager.shared.recheckDoubleCmdCMonitor()
             }
-        }
-        .onDisappear {
-            saveApiKey()
         }
     }
 
     // MARK: - Sidebar (macOS 27 Edge-to-Edge with Colored SF Symbols)
     private var sidebarView: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 0) {
             // Window Traffic Light Safe Area
             HStack {
                 Spacer()
             }
-            .frame(height: 38)
+            .frame(height: 12)
 
             // App Brand Banner
             HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(
-                            LinearGradient(
-                                colors: [Color.blue, Color.purple],
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                        .frame(width: 26, height: 26)
+                Image(nsImage: NSImage.appIcon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 28, height: 28)
 
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundColor(.white)
-                }
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("LightL")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.primary)
-                    Text("macOS 27 Golden Gate")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundColor(.secondary)
-                }
+                Text("LightL")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundColor(.primary)
             }
+            .frame(height: 32)
             .padding(.horizontal, 14)
             .padding(.bottom, 12)
 
             // Tab Navigation Items
             VStack(spacing: 3) {
-                ForEach(Tab.allCases) { tab in
+                ForEach(SettingsTab.allCases) { tab in
                     let isSelected = selectedTab == tab
                     Button(action: {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
@@ -213,27 +181,28 @@ public struct SettingsView: View {
             // Header
             HStack {
                 Text(selectedTab.title)
-                    .font(.system(size: 20, weight: .bold))
+                    .font(.system(size: 16, weight: .bold))
                 Spacer()
             }
+            .frame(height: 32)
             .padding(.horizontal, 24)
-            .padding(.top, 24)
-            .padding(.bottom, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 12)
 
             // Content Body
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 16) {
                     switch selectedTab {
                     case .aiModel:
-                        aiModelTabContent
+                        AIModelTab()
                     case .translation:
-                        translationTabContent
+                        TranslationTab()
                     case .rewrite:
-                        rewriteTabContent
+                        RewriteTab()
                     case .permissions:
-                        permissionsTabContent
+                        PermissionsTab()
                     case .appearance:
-                        appearanceTabContent
+                        AppearanceTab()
                     }
                 }
                 .padding(.horizontal, 24)
@@ -241,9 +210,28 @@ public struct SettingsView: View {
             }
         }
     }
+}
 
-    // MARK: - Tab 1: AI & Model Content
-    private var aiModelTabContent: some View {
+// MARK: - Tab 1: AI & Model Content
+
+@MainActor
+struct AIModelTab: View {
+    @Bindable var settings = AppSettings.shared
+
+    private enum ConnectionStatus {
+        case success(String)
+        case failure(String)
+    }
+
+    @State private var apiKeyInput: String = ""
+    @State private var isTestingApiKey = false
+    @State private var testResult: ConnectionStatus? = nil
+    @State private var isShowingApiKey = false
+    @State private var isCustomModel = false
+    @State private var customModelText = ""
+    @State private var modelDebounceTask: Task<Void, Never>? = nil
+
+    var body: some View {
         VStack(spacing: 14) {
             // Card: API Key
             VStack(alignment: .leading, spacing: 12) {
@@ -257,15 +245,31 @@ public struct SettingsView: View {
 
                 HStack(spacing: 8) {
                     Group {
-                        if isShowingApiKey {
+                        if isShowingApiKey || apiKeyInput.isEmpty {
                             TextField("AIzaSy...", text: $apiKeyInput)
+                                .textFieldStyle(.plain)
+                                .autocorrectionDisabled()
+                                .onSubmit {
+                                    saveApiKey()
+                                }
+                                .onChange(of: apiKeyInput) { _, _ in
+                                    saveApiKey()
+                                }
                         } else {
-                            SecureField("AIzaSy...", text: $apiKeyInput)
+                            HStack {
+                                Text(maskedApiKey)
+                                    .font(.system(size: 13, weight: .regular, design: .monospaced))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                Spacer()
+                            }
+                            .frame(minHeight: 19)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                isShowingApiKey = true
+                            }
                         }
-                    }
-                    .textFieldStyle(.plain)
-                    .onSubmit {
-                        saveApiKey()
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
@@ -339,11 +343,10 @@ public struct SettingsView: View {
                     set: { val in
                         if val == "custom" {
                             isCustomModel = true
-                            if !customModelText.isEmpty {
-                                settings.selectedModelId = customModelText
-                            }
+                            commitCustomModel()
                         } else {
                             isCustomModel = false
+                            modelDebounceTask?.cancel()
                             settings.selectedModelId = val
                         }
                     }
@@ -362,8 +365,19 @@ public struct SettingsView: View {
                             .font(.system(size: 12))
                         TextField(L10n.tr(ru: "например: gemini-2.5-flash", en: "e.g. gemini-2.5-flash"), text: $customModelText)
                             .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                commitCustomModel()
+                            }
                             .onChange(of: customModelText) { _, newVal in
-                                settings.selectedModelId = newVal.trimmingCharacters(in: .whitespacesAndNewlines)
+                                modelDebounceTask?.cancel()
+                                modelDebounceTask = Task { @MainActor in
+                                    try? await Task.sleep(nanoseconds: 600_000_000)
+                                    guard !Task.isCancelled else { return }
+                                    let trimmed = newVal.trimmingCharacters(in: .whitespacesAndNewlines)
+                                    if !trimmed.isEmpty && settings.selectedModelId != trimmed {
+                                        settings.selectedModelId = trimmed
+                                    }
+                                }
                             }
                     }
                 } else if let current = GeminiModelOption.availableModels.first(where: { $0.modelId == settings.selectedModelId }) {
@@ -376,10 +390,77 @@ public struct SettingsView: View {
             .padding(16)
             .macos27ContentCard(cornerRadius: 12)
         }
+        .onAppear {
+            apiKeyInput = settings.geminiApiKey
+            let isKnown = GeminiModelOption.availableModels.contains { $0.modelId == settings.selectedModelId }
+            if !isKnown {
+                isCustomModel = true
+                customModelText = settings.selectedModelId
+            }
+        }
+        .onDisappear {
+            saveApiKey()
+            commitCustomModel()
+        }
     }
 
-    // MARK: - Tab 2: Translation Content
-    private var translationTabContent: some View {
+    private var maskedApiKey: String {
+        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+        if trimmed.count <= 8 {
+            return String(repeating: "•", count: trimmed.count)
+        }
+        let prefix = trimmed.prefix(6)
+        let suffix = trimmed.suffix(4)
+        return "\(prefix)••••••••••••\(suffix)"
+    }
+
+    private func commitCustomModel() {
+        modelDebounceTask?.cancel()
+        modelDebounceTask = nil
+        let trimmed = customModelText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && settings.selectedModelId != trimmed {
+            settings.selectedModelId = trimmed
+        }
+    }
+
+    private func saveApiKey() {
+        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty || !settings.geminiApiKey.isEmpty {
+            settings.geminiApiKey = trimmed
+        }
+        testResult = nil
+    }
+
+    private func testConnection() {
+        isTestingApiKey = true
+        testResult = nil
+        let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
+        settings.geminiApiKey = key
+        let model = settings.selectedModelId
+
+        Task {
+            do {
+                try await GeminiService.shared.testApiKey(apiKey: key, model: model)
+                self.testResult = .success(L10n.tr(
+                    ru: "Подключение успешно! Модель \(model) готова.",
+                    en: "Connection successful! Model \(model) is ready."
+                ))
+                self.isTestingApiKey = false
+            } catch {
+                self.testResult = .failure(error.localizedDescription)
+                self.isTestingApiKey = false
+            }
+        }
+    }
+}
+
+// MARK: - Tab 2: Translation Content
+
+struct TranslationTab: View {
+    @Bindable var settings = AppSettings.shared
+
+    var body: some View {
         VStack(spacing: 14) {
             // Target Language Card
             VStack(alignment: .leading, spacing: 10) {
@@ -407,7 +488,8 @@ public struct SettingsView: View {
 
                 ShortcutRecorderView(
                     label: L10n.tr(ru: "Всплывающее окно перевода:", en: "Translation popover:"),
-                    shortcut: $settings.translateShortcut
+                    shortcut: $settings.translateShortcut,
+                    defaultShortcut: ShortcutModel.defaultTranslate
                 )
 
                 Divider()
@@ -426,9 +508,14 @@ public struct SettingsView: View {
             .macos27ContentCard(cornerRadius: 12)
         }
     }
+}
 
-    // MARK: - Tab 3: Rewrite Content
-    private var rewriteTabContent: some View {
+// MARK: - Tab 3: Rewrite Content
+
+struct RewriteTab: View {
+    @Bindable var settings = AppSettings.shared
+
+    var body: some View {
         VStack(spacing: 14) {
             // Mode Selection Card
             VStack(alignment: .leading, spacing: 14) {
@@ -538,7 +625,8 @@ public struct SettingsView: View {
 
                 ShortcutRecorderView(
                     label: L10n.tr(ru: "Замена выделенного фрагмента:", en: "Replace selected text:"),
-                    shortcut: $settings.rewriteShortcut
+                    shortcut: $settings.rewriteShortcut,
+                    defaultShortcut: ShortcutModel.defaultRewrite
                 )
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -652,9 +740,18 @@ public struct SettingsView: View {
                 .foregroundColor(.primary)
         }
     }
+}
 
-    // MARK: - Tab 4: Permissions Content
-    private var permissionsTabContent: some View {
+// MARK: - Tab 4: Permissions Content
+
+struct PermissionsTab: View {
+    @State private var isAxGranted = TextCaptureService.isAccessibilityGranted()
+    @State private var isChecking = false
+    @State private var feedbackText: String? = nil
+    @State private var feedbackIsSuccess = true
+    @State private var feedbackResetTask: Task<Void, Never>? = nil
+
+    var body: some View {
         VStack(spacing: 14) {
             VStack(alignment: .leading, spacing: 14) {
                 HStack(spacing: 12) {
@@ -682,24 +779,122 @@ public struct SettingsView: View {
                 }
 
                 HStack(spacing: 10) {
-                    Button(L10n.tr(ru: "Проверить статус", en: "Check Status")) {
-                        isAxGranted = TextCaptureService.isAccessibilityGranted(prompt: true)
+                    Button(action: checkAccessibilityStatus) {
+                        HStack(spacing: 6) {
+                            if isChecking {
+                                ProgressView()
+                                    .controlSize(.small)
+                                    .scaleEffect(0.7)
+                                    .frame(width: 12, height: 12)
+                                Text(L10n.tr(ru: "Проверка...", en: "Checking..."))
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text(L10n.tr(ru: "Проверить статус", en: "Check Status"))
+                            }
+                        }
                     }
                     .buttonStyle(MacOS27GlassPillButtonStyle(isProminent: false))
+                    .disabled(isChecking)
 
                     Button(L10n.tr(ru: "Открыть Системные настройки", en: "Open System Settings")) {
                         TextCaptureService.openAccessibilitySettings()
                     }
                     .buttonStyle(MacOS27GlassPillButtonStyle(isProminent: true))
+
+                    if let text = feedbackText {
+                        HStack(spacing: 5) {
+                            Image(systemName: feedbackIsSuccess ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                            Text(text)
+                                .font(.system(size: 11.5, weight: .medium))
+                        }
+                        .foregroundColor(feedbackIsSuccess ? .green : .orange)
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 5)
+                        .background(
+                            Capsule(style: .continuous)
+                                .fill((feedbackIsSuccess ? Color.green : Color.orange).opacity(0.12))
+                        )
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    }
+                }
+
+                if !isAxGranted {
+                    Text(L10n.tr(
+                        ru: "Если macOS не показала системный запрос, нажмите «Открыть Системные настройки» и включите тумблер LightL вручную.",
+                        en: "If macOS didn't show a system prompt, click \"Open System Settings\" and enable the LightL toggle manually."
+                    ))
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
                 }
             }
             .padding(16)
             .macos27ContentCard(cornerRadius: 12)
         }
+        .onAppear {
+            isAxGranted = TextCaptureService.isAccessibilityGranted()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            let granted = TextCaptureService.isAccessibilityGranted()
+            isAxGranted = granted
+            if granted {
+                HotKeyManager.shared.recheckDoubleCmdCMonitor()
+            }
+        }
     }
 
-    // MARK: - Tab 5: Appearance Content (macOS 27 HIG Standards)
-    private var appearanceTabContent: some View {
+    private func checkAccessibilityStatus() {
+        feedbackResetTask?.cancel()
+        withAnimation(.easeOut(duration: 0.15)) {
+            isChecking = true
+            feedbackText = nil
+        }
+
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 350_000_000)
+
+            let granted = TextCaptureService.isAccessibilityGranted(prompt: !isAxGranted)
+
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                self.isAxGranted = granted
+                self.isChecking = false
+                if granted {
+                    HotKeyManager.shared.recheckDoubleCmdCMonitor()
+                    self.feedbackIsSuccess = true
+                    self.feedbackText = L10n.tr(
+                        ru: "Права активны",
+                        en: "Permission active"
+                    )
+                } else {
+                    self.feedbackIsSuccess = false
+                    self.feedbackText = L10n.tr(
+                        ru: "Доступ не включен",
+                        en: "Not yet enabled"
+                    )
+                }
+            }
+
+            NSHapticFeedbackManager.defaultPerformer.perform(.alignment, performanceTime: .default)
+
+            feedbackResetTask = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                if !Task.isCancelled {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        self.feedbackText = nil
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Tab 5: Appearance Content (macOS 27 HIG Standards)
+
+struct AppearanceTab: View {
+    @Bindable var settings = AppSettings.shared
+
+    var body: some View {
         VStack(spacing: 14) {
             // Language Selection Card
             VStack(alignment: .leading, spacing: 12) {
@@ -735,11 +930,11 @@ public struct SettingsView: View {
                         .foregroundColor(.accentColor)
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(L10n.tr(ru: "Стиль интерфейса macOS 27 Golden Gate", en: "macOS 27 Golden Gate UI Style"))
+                        Text(L10n.tr(ru: "Стиль интерфейса", en: "UI Style"))
                             .font(.system(size: 13, weight: .semibold))
                         Text(L10n.tr(
-                            ru: "Liquid Glass 2.0 с динамическим линзированием и структурированными карточками.",
-                            en: "Liquid Glass 2.0 with dynamic lensing and structured content cards."
+                            ru: "Liquid Glass с динамическим линзированием и структурированными карточками.",
+                            en: "Liquid Glass with dynamic lensing and structured content cards."
                         ))
                         .font(.system(size: 11.5))
                         .foregroundColor(.secondary)
@@ -779,7 +974,7 @@ public struct SettingsView: View {
                     bulletPoint(
                         title: L10n.tr(ru: "Поддержка системного слайдера прозрачности:", en: "System Transparency Slider Support:"),
                         detail: L10n.tr(
-                            ru: "Интерфейс корректно реагирует на ползунок Liquid Glass в Системных настройках macOS 27 и режим «Уменьшение прозрачности».",
+                            ru: "Интерфейс корректно реагирует на ползунок Liquid Glass в Системных настройках macOS и режим «Уменьшение прозрачности».",
                             en: "Responds seamlessly to system Liquid Glass opacity sliders and Reduce Transparency mode."
                         )
                     )
@@ -798,42 +993,6 @@ public struct SettingsView: View {
             Text(detail)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
-        }
-    }
-
-    // MARK: - Save API Key
-    private func saveApiKey() {
-        let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty || !settings.geminiApiKey.isEmpty {
-            settings.geminiApiKey = trimmed
-        }
-        testResult = nil
-    }
-
-    // MARK: - Connection Test
-    private func testConnection() {
-        isTestingApiKey = true
-        testResult = nil
-        let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        settings.geminiApiKey = key
-        let model = settings.selectedModelId
-
-        Task {
-            do {
-                try await GeminiService.shared.testApiKey(apiKey: key, model: model)
-                await MainActor.run {
-                    self.testResult = .success(L10n.tr(
-                        ru: "Подключение успешно! Модель \(model) готова.",
-                        en: "Connection successful! Model \(model) is ready."
-                    ))
-                    self.isTestingApiKey = false
-                }
-            } catch {
-                await MainActor.run {
-                    self.testResult = .failure(error.localizedDescription)
-                    self.isTestingApiKey = false
-                }
-            }
         }
     }
 }
