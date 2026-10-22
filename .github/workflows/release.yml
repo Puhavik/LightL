@@ -91,6 +91,12 @@ jobs:
           security default-keychain -s "$KEYCHAIN_PATH"
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
+          curl -sS https://www.apple.com/certificateauthority/DeveloperIDCA.cer -o "$RUNNER_TEMP/DeveloperIDCA.cer"
+          curl -sS https://www.apple.com/certificateauthority/DeveloperIDG2CA.cer -o "$RUNNER_TEMP/DeveloperIDG2CA.cer"
+          security import "$RUNNER_TEMP/DeveloperIDCA.cer" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+          security import "$RUNNER_TEMP/DeveloperIDG2CA.cer" -k "$KEYCHAIN_PATH" -T /usr/bin/codesign
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> $GITHUB_ENV
+
       - name: Build Application Bundle
         run: ./scripts/build_app.sh
         env:
@@ -128,7 +134,7 @@ jobs:
         if: always()
         run: |
           security delete-keychain $RUNNER_TEMP/build.keychain 2>/dev/null || true
-          rm -f $RUNNER_TEMP/certificate.p12 $RUNNER_TEMP/*.p8 || true
+          rm -f $RUNNER_TEMP/certificate.p12 $RUNNER_TEMP/*.p8 $RUNNER_TEMP/*.cer || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

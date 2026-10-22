@@ -34,11 +34,16 @@ if [ -z "$DEV_IDENTITY" ]; then
     DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "Apple Development" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 fi
 
+KEYCHAIN_ARG=()
+if [ -n "${KEYCHAIN_PATH:-}" ]; then
+    KEYCHAIN_ARG=(--keychain "${KEYCHAIN_PATH}")
+fi
+
 if [ -n "$DEV_IDENTITY" ] && [ "$DEV_IDENTITY" != "-" ]; then
     echo "==> Signing ${DMG_NAME} with ${DEV_IDENTITY}..."
-    if ! codesign --force --timestamp --sign "${DEV_IDENTITY}" "${DMG_PATH}" 2>/dev/null; then
+    if ! codesign --force --timestamp "${KEYCHAIN_ARG[@]}" --sign "${DEV_IDENTITY}" "${DMG_PATH}"; then
         echo "==> DMG signing with ${DEV_IDENTITY} failed, falling back to ad-hoc..."
-        codesign --force --sign - "${DMG_PATH}" 2>/dev/null || true
+        codesign --force --sign - "${DMG_PATH}" || true
     fi
 else
     echo "==> No signing identity provided or found, skipping DMG signing."
