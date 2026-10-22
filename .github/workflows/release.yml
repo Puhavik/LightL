@@ -22,6 +22,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Swift Version
         run: swift --version
@@ -29,17 +31,14 @@ jobs:
       - name: Run Tests
         run: swift test -v
 
-      - name: Build Application Bundle
-        run: ./scripts/build_app.sh
-
-      - name: Create DMG Installer
-        run: ./scripts/create_dmg.sh
-
       - name: Determine Release Tag & Extract Changelog
         id: release_info
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag_name }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag_name }}"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$INPUT_TAG"
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
@@ -48,7 +47,7 @@ jobs:
           # Extract matching section from CHANGELOG.md
           python3 -c "
           import sys, re
-          tag = '${TAG}'.lstrip('v')
+          tag = sys.argv[1].lstrip('v')
           try:
               with open('CHANGELOG.md', 'r') as f:
                   content = f.read()
@@ -61,12 +60,67 @@ jobs:
                   print('Extracted release notes for', tag)
           except Exception as e:
               print('Could not extract notes:', e)
-          "
+          " "$TAG"
           if [ -s "release_notes.md" ]; then
             echo "has_notes=true" >> $GITHUB_OUTPUT
           else
             echo "has_notes=false" >> $GITHUB_OUTPUT
           fi
+
+      - name: Import Signing Certificate
+        if: ${{ secrets.MACOS_CERTIFICATE != '' }}
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PWD: ${{ secrets.MACOS_CERTIFICATE_PWD }}
+        run: |
+          KEYCHAIN_PATH=$RUNNER_TEMP/build.keychain
+          KEYCHAIN_PWD=$(openssl rand -base64 20)
+          CERT_PATH=$RUNNER_TEMP/certificate.p12
+
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+
+          security import "$CERT_PATH" -P "$MACOS_CERTIFICATE_PWD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PWD" "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
+
+      - name: Build Application Bundle
+        run: ./scripts/build_app.sh
+        env:
+          VERSION: ${{ steps.release_info.outputs.tag }}
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+
+      - name: Create DMG Installer
+        run: ./scripts/create_dmg.sh
+        env:
+          SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
+
+      - name: Notarize DMG
+        if: ${{ secrets.APPLE_API_KEY_BASE64 != '' && secrets.MACOS_CERTIFICATE != '' }}
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          AUTH_KEY_PATH=$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$AUTH_KEY_PATH"
+
+          xcrun notarytool submit LightL.dmg \
+            --key "$AUTH_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait
+
+          xcrun stapler staple LightL.dmg
+
+      - name: Cleanup Keychain
+        if: always()
+        run: |
+          security delete-keychain $RUNNER_TEMP/build.keychain 2>/dev/null || true
+          rm -f $RUNNER_TEMP/certificate.p12 $RUNNER_TEMP/*.p8 || true
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

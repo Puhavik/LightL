@@ -15,12 +15,31 @@ fi
 
 echo "==> Creating ${DMG_NAME} with Applications symlink..."
 DMG_TEMP_DIR="$(mktemp -d)"
-cp -R "${APP_BUNDLE}" "${DMG_TEMP_DIR}/"
+trap 'rm -rf "${DMG_TEMP_DIR}"' EXIT INT TERM
+
+/usr/bin/ditto "${APP_BUNDLE}" "${DMG_TEMP_DIR}/${APP_NAME}.app"
 ln -s /Applications "${DMG_TEMP_DIR}/Applications"
 
 rm -f "${DMG_PATH}"
 hdiutil create -volname "${APP_NAME}" -srcfolder "${DMG_TEMP_DIR}" -ov -format UDZO "${DMG_PATH}"
-rm -rf "${DMG_TEMP_DIR}"
+
+DEV_IDENTITY="${SIGNING_IDENTITY:-}"
+if [ -z "$DEV_IDENTITY" ]; then
+    DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "Developer ID Application" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
+fi
+if [ -z "$DEV_IDENTITY" ]; then
+    DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "REDACTED" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
+fi
+if [ -z "$DEV_IDENTITY" ]; then
+    DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "Apple Development" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
+fi
+
+if [ -n "$DEV_IDENTITY" ] && [ "$DEV_IDENTITY" != "-" ]; then
+    echo "==> Signing ${DMG_NAME} with ${DEV_IDENTITY}..."
+    codesign --force --timestamp --sign "${DEV_IDENTITY}" "${DMG_PATH}"
+else
+    echo "==> No signing identity provided or found, skipping DMG signing."
+fi
 
 echo "=========================================="
 echo "✓ DMG created: ${DMG_PATH}"

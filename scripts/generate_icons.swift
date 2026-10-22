@@ -355,7 +355,16 @@ func savePNG(image: CGImage, to url: URL) {
 // EXECUTION
 // -------------------------------------------------------------
 let fileManager = FileManager.default
-let outputDir = URL(fileURLWithPath: "scripts/assets")
+let outputDir: URL = {
+    if fileManager.fileExists(atPath: "Sources/LightL/Resources") {
+        return URL(fileURLWithPath: "Sources/LightL/Resources")
+    } else if fileManager.fileExists(atPath: "../Sources/LightL/Resources") {
+        return URL(fileURLWithPath: "../Sources/LightL/Resources")
+    } else {
+        let scriptURL = URL(fileURLWithPath: #filePath)
+        return scriptURL.deletingLastPathComponent().deletingLastPathComponent().appendingPathComponent("Sources/LightL/Resources")
+    }
+}()
 try? fileManager.createDirectory(at: outputDir, withIntermediateDirectories: true)
 
 print("==> Rendering 1024x1024 macOS App Icon...")
@@ -412,6 +421,8 @@ task.executableURL = URL(fileURLWithPath: "/usr/bin/iconutil")
 task.arguments = ["-c", "icns", iconsetDir.path, "-o", icnsURL.path]
 try? task.run()
 task.waitUntilExit()
+
+try? fileManager.removeItem(at: iconsetDir)
 
 print("==> Created AppIcon.icns (Status: \(task.terminationStatus))")
 
