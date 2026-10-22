@@ -5,7 +5,7 @@ public enum KeychainHelper {
     public static let serviceName = "com.puhavik.LightL"
     private static let legacyServiceName = "com.user.LightL"
     public static let accountName = "GeminiApiKey"
-    public static let accessGroup: String? = "888364TBC7.com.puhavik.LightL"
+    nonisolated(unsafe) public static var accessGroup: String? = nil
 
     private static let storageLock = NSLock()
     nonisolated(unsafe) public static var inMemoryStorage: [String: String]? = nil
@@ -62,7 +62,7 @@ public enum KeychainHelper {
         }
 
         var configurations: [(useDataProtection: Bool, group: String?)] = []
-        if let group = accessGroup {
+        if let group = accessGroup, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             configurations.append((useDataProtection: true, group: group))
         }
         configurations.append((useDataProtection: true, group: nil))
@@ -136,7 +136,7 @@ public enum KeychainHelper {
         }
 
         var configurations: [(useDataProtection: Bool, group: String?)] = []
-        if let group = accessGroup {
+        if let group = accessGroup, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             configurations.append((useDataProtection: true, group: group))
         }
         configurations.append((useDataProtection: true, group: nil))
@@ -182,7 +182,7 @@ public enum KeychainHelper {
         if handledInMemory { return }
 
         var configurations: [(useDataProtection: Bool, group: String?)] = []
-        if let group = accessGroup {
+        if let group = accessGroup, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             configurations.append((useDataProtection: true, group: group))
         }
         configurations.append((useDataProtection: true, group: nil))
