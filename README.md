@@ -1,53 +1,57 @@
-# LightL — Легковесный AI-переводчик и редактор для macOS
+# LightL — Lightweight AI Translator & Proofreader for macOS
 
-Быстрый, нативный AI-инструмент для перевода и редактирования текста на Swift и SwiftUI. 
-Использует **Google Gemini API** (рекомендуемая модель `gemini-3.5-flash-lite` или флагманская `gemini-3.8-flash`), потребляет минимум системных ресурсов (~30–40 МБ RAM, 0% CPU в фоне) и не засоряет Dock.
+[![CI](https://github.com/Puhavik/LightL/actions/workflows/ci.yml/badge.svg)](https://github.com/Puhavik/LightL/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Puhavik/LightL?color=blue)](https://github.com/Puhavik/LightL/releases/latest)
+[![macOS 15+](https://img.shields.io/badge/macOS-15%2B%20(Sequoia)-black?logo=apple)](https://www.apple.com/macos/)
+[![Swift 6](https://img.shields.io/badge/Swift-6.0-orange?logo=swift)](https://swift.org)
 
----
-
-## ⚡️ Возможности
-
-1. **Работа в Menu Bar (Строке меню сверху):**
-   - Приложение работает незаметно в верхнем статус-баре.
-   - В основном Dock иконки нет (`LSUIElement = true`).
-   - Управление через статус-меню: быстрый выбор языка, переключение режимов, статус API.
-
-2. **Быстрый перевод выделенного текста (Всплывающее окно):**
-   - Шорткат по умолчанию: **`⌥ + ⌘ + C`** (или быстрое двойное нажатие **`⌘ + C`**).
-   - Автоматически определяет язык выделенного текста.
-   - Переводит на целевой язык (настраивается в меню/настройках, по умолчанию русский).
-   - Всплывает аккуратное плавающее окно рядом с выделенным текстом или курсором мыши.
-   - Кнопки: **«Скопировать»**, **«Заменить в тексте»**, закрытие по `Esc` или клику мимо.
-
-3. **Исправление текста на месте (In-place Proofreading & Rewrite):**
-   - Шорткат по умолчанию: **`⌥ + ⌘ + W`**.
-   - Два режима работы (выбираются в настройках):
-     - **Исправление ошибок:** исправляет грамматику, орфографию и пунктуацию, сохраняя исходные слова и структуру.
-     - **Улучшение стиля:** перефразирует текст, делая его более лаконичным, живым и профессиональным.
-   - Заменяет текст прямо в активном приложении без всплывающих окон.
-   - **Защита от сбоев и мягкая индикация ошибок:**
-     - Если нет интернета или API вернул ошибку, **исходный текст в поле ввода не стирается и не теряется**.
-     - Вместо назойливых модальных окон на экране **иконка в строке меню сверху начинает моргать красным**, сообщая о проблеме.
-
-4. **Полная кастомизация горячих клавиш:**
-   - В настройках встроен удобный рекордер шорткатов.
-   - Возможность включить/выключить двойное нажатие `⌘ + C`.
+A blazing fast, native macOS menu bar app for seamless translation and AI proofreading built with Swift and SwiftUI.
+Powered by **Google Gemini API** (recommended `gemini-3.5-flash-lite` or flagship `gemini-3.8-flash`), consuming minimal system resources (~30–40 MB RAM, 0% CPU idle) with zero Dock clutter.
 
 ---
 
-## 🚀 Запуск и установка
+## ⚡️ Features
 
-### Установка готовой сборки
-1. Скачайте архив `LightL-macOS.zip` со страницы [GitHub Releases](https://github.com/Puhavik/LightL/releases/latest).
-2. Распакуйте и переместите `LightL.app` в папку `/Applications/`:
+1. **Menu Bar Resident (`LSUIElement = true`):**
+   - Lives quietly in your macOS status bar without cluttering the Dock.
+   - Quick-access menu: instant language selection, mode toggles, and API connectivity indicator.
+
+2. **Quick Translation Popover:**
+   - Default hotkey: **`⌥ + ⌘ + C`** (or quick double-tap **`⌘ + C`**).
+   - Automatic source language detection.
+   - Translates selected text to your target language.
+   - Floating panel appears contextually adjacent to selected text or cursor.
+   - One-click actions: **Copy**, **Replace In-Place**, dismiss on `Esc` or click-outside.
+
+3. **In-place Proofreading & Rewrite:**
+   - Default hotkey: **`⌥ + ⌘ + W`**.
+   - Two specialized modes:
+     - **Fix Grammar & Punctuation:** Corrects typos, grammar, and punctuation while preserving original structure and vocabulary.
+     - **Improve Style:** Rewrites text to be more concise, natural, and professional.
+   - Directly replaces selected text in any active macOS application without opening popovers.
+   - **Fault-tolerant feedback:**
+     - If the network drops or API quota is exceeded, **original text is never lost or deleted**.
+     - Unobtrusive error notification: status bar icon pulses red instead of disruptive modal dialogs.
+
+4. **Customizable Shortcuts:**
+   - Built-in visual keyboard shortcut recorder.
+   - Toggle double `⌘ + C` trigger on/off.
+
+---
+
+## 🚀 Installation & Launch
+
+### Prebuilt Binary
+1. Download `LightL-macOS.zip` from [GitHub Releases](https://github.com/Puhavik/LightL/releases/latest).
+2. Unzip and copy `LightL.app` to `/Applications/`:
    ```bash
    cp -R LightL.app /Applications/
    open /Applications/LightL.app
    ```
-*(При первом запуске macOS может предупредить о неподписанном приложении: нажмите Правый клик по приложению → «Открыть»).*
+*(On first launch, if macOS Gatekeeper prompts for ad-hoc signature, Right-click `LightL.app` → select **Open**).*
 
-### Сборка из исходников
-Для сборки приложения локально:
+### Build From Source
+Requirements: macOS 15.0+ and Xcode 16.0+ (Swift 6.0).
 ```bash
 git clone https://github.com/Puhavik/LightL.git
 cd LightL
@@ -57,21 +61,21 @@ open LightL.app
 
 ---
 
-## 🔑 Первоначальная настройка
+## 🔑 Setup
 
-1. **Ключ Gemini API:**
-   - Откройте **Настройки** (клик по иконке в строке меню → «Настройки...» или шорткат `⌘,`).
-   - Вставьте ваш API ключ от Google Gemini (получить бесплатно можно на [Google AI Studio](https://aistudio.google.com/app/apikey)).
-   - Нажмите **«Сохранить»** и **«Проверить ключ»** (приложение сразу подтвердит связь).
+1. **Google Gemini API Key:**
+   - Open **Settings** (Click menu bar icon → **Settings...** or press `⌘,`).
+   - Paste your Gemini API key (obtainable for free at [Google AI Studio](https://aistudio.google.com/app/apikey)).
+   - Click **Save** and **Test API Key** to verify connectivity.
 
-2. **Разрешение «Универсальный доступ» (Accessibility):**
-   - Для того чтобы приложение могло считывать выделенный текст из сторонних программ и заменять его на месте по шорткату, macOS требует разрешение.
-   - Перейдите во вкладку **«Разрешения»** в настройках LightL и нажмите **«Открыть Системные настройки»**.
-   - Включите переключатель напротив `LightL` (или вашего терминала при запуске из консоли).
+2. **Accessibility Permissions:**
+   - macOS requires Accessibility permissions to read selected text from external apps and replace it in-place.
+   - Navigate to the **Permissions** tab in LightL Settings and click **Open System Settings**.
+   - Enable the toggle for `LightL` (or your terminal if launching via CLI).
 
 ---
 
-## 📄 Лицензия
+## 📄 License
 
 Copyright © 2026 Puhavik. All rights reserved.
-Подробности в файле [LICENSE](LICENSE).
+See [LICENSE](LICENSE) for details.
