@@ -213,10 +213,6 @@ public final class FloatingTranslationPanel: NSPanel {
         }
     }
 
-    isolated deinit {
-        stopMonitors()
-    }
-
     private func findTargetScreen(for pointOrRect: EitherPointOrRect) -> NSScreen? {
         let testPoint: CGPoint
         switch pointOrRect {

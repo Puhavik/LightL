@@ -53,12 +53,6 @@ final class ShortcutRecorderController {
             localMonitor = nil
         }
     }
-
-    isolated deinit {
-        if let monitor = localMonitor {
-            NSEvent.removeMonitor(monitor)
-        }
-    }
 }
 
 public struct ShortcutRecorderView: View {
