@@ -4,7 +4,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ---
 
-## [Unreleased]
+## [1.2.2] - 2026-10-23
 
 ### Fixed
 - App crashed on launch when installed from the release DMG ("could not load resource bundle"). Icons are now loaded from the app bundle first; SwiftPM's resource bundle is only used when running from the build tree. CI now launches the packaged app as a smoke test.
@@ -12,6 +12,8 @@ All notable user-facing features, improvements, and fixes for LightL.
 ---
 
 ## [1.2.1] - 2026-10-23
+
+> **Broken:** the app crashes on launch when installed from the DMG. Fixed in 1.2.2.
 
 ### Fixed
 - Translation and proofreading results no longer show the internal delimiter tags (`<input-…>`) that the model sometimes echoed at the start and end of the text (regression in 1.2.0).
@@ -22,6 +24,8 @@ All notable user-facing features, improvements, and fixes for LightL.
 ---
 
 ## [1.2.0] - 2026-10-23
+
+> **Broken:** the app crashes on launch when installed from the DMG. Fixed in 1.2.2.
 
 ### Security
 - **Per-request prompt isolation**: selected text is wrapped in a random per-request tag instead of a fixed `<input>` tag, so it cannot close the delimiter.
