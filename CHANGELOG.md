@@ -4,6 +4,13 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ---
 
+## [Unreleased]
+
+### Security
+- Double-tap ⌘C is skipped while a password manager is the active app (Apple Passwords, 1Password, Bitwarden, KeePassXC, Keychain Access and others), because Apple Passwords does not mark copied passwords as concealed.
+
+---
+
 ## [1.2.0] - 2026-10-23
 
 ### Security

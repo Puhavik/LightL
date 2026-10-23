@@ -37,6 +37,18 @@ final class DoubleTapTracker: Sendable {
 public final class HotKeyManager {
     public static let shared = HotKeyManager()
 
+    static let secretAppBundleIDs: Set<String> = [
+        "com.apple.Passwords",
+        "com.apple.keychainaccess",
+        "com.1password.1password",
+        "com.agilebits.onepassword7",
+        "com.bitwarden.desktop",
+        "org.keepassxc.keepassxc",
+        "com.dashlane.dashlanephonefinal",
+        "com.lastpass.lastpassmacdesktop",
+        "com.protonpass.pass.macos"
+    ]
+
     public var onTranslate: (() -> Void)?
     public var onRewrite: (() -> Void)?
 
@@ -173,9 +185,12 @@ public final class HotKeyManager {
                 Task { @MainActor in
                     // Yield briefly for target app to finish updating clipboard
                     try? await Task.sleep(nanoseconds: 50_000_000)
-                    // Password managers mark copied secrets as concealed: never send those to the API.
+                    // Never send secrets to the API: skip concealed clipboard content and password-manager apps
+                    // (Apple Passwords does not mark its clipboard as concealed).
                     let types = NSPasteboard.general.types ?? []
                     if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) { return }
+                    if let id = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
+                       HotKeyManager.secretAppBundleIDs.contains(id) { return }
                     HotKeyManager.shared.onTranslate?()
                 }
             }

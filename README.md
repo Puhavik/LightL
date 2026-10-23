@@ -166,7 +166,7 @@ macOS requires Accessibility permissions so LightL can read selected text and re
 
 - The text you select is sent to the Google Gemini API using **your** API key. LightL has no server of its own and collects no telemetry.
 - Free-tier Gemini inputs may be used by Google to improve its products; see Google's Gemini API terms. Use a paid-tier key if that matters.
-- Double-tap <kbd>⌘</kbd><kbd>C</kbd> is on by default and sends the selection to Google. Text copied from password managers (marked as concealed) is skipped, but other private text is not, so turn the option off in Settings if you copy sensitive text twice.
+- Double-tap <kbd>⌘</kbd><kbd>C</kbd> is on by default and sends the selection to Google. Text copied from password managers (marked as concealed) and anything triggered while Apple Passwords, 1Password, Bitwarden, KeePassXC, Dashlane, LastPass, Proton Pass or Keychain Access is the active app is skipped, but other private text is not, so turn the option off in Settings if you copy sensitive text twice.
 - The API key is stored in the macOS Keychain, never in files or logs.
 
 ---
