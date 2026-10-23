@@ -22,6 +22,8 @@ jobs:
     environment: release
     permissions:
       contents: write
+      id-token: write
+      attestations: write
 
     steps:
       - name: Checkout repository
@@ -173,6 +175,11 @@ jobs:
           security delete-keychain "$RUNNER_TEMP/build.keychain" 2>/dev/null || true
           rm -f "$RUNNER_TEMP/certificate.p12" "$RUNNER_TEMP"/*.p8 "$RUNNER_TEMP"/*.cer || true
 
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: LightL.dmg
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
@@ -184,5 +191,4 @@ jobs:
           draft: false
           prerelease: false
         env:
-          # A personal token makes the release authored by its owner; falls back to the bot token.
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
