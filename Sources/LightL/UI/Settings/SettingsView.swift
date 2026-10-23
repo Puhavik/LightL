@@ -52,9 +52,15 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
 public struct SettingsView: View {
     @Bindable var settings = AppSettings.shared
-    @State private var selectedTab: SettingsTab = .aiModel
+    @State private var selectedTab: SettingsTab
 
-    public init() {}
+    public init() {
+        _selectedTab = State(initialValue: .aiModel)
+    }
+
+    init(initialTab: SettingsTab) {
+        _selectedTab = State(initialValue: initialTab)
+    }
 
     public var body: some View {
         HStack(spacing: 0) {
