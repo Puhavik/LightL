@@ -42,3 +42,16 @@ struct DoubleTapGuardTests {
         #expect(!HotKeyManager.shouldSkipDoubleTap(pasteboardTypes: plain, frontmostBundleID: nil))
     }
 }
+
+@Suite("Echoed delimiter tags")
+struct StripTagTests {
+    @Test("removes echoed open/close tags and partial tags from streamed text")
+    func strip() {
+        let tag = "input-3af13b590560"
+        #expect(GeminiService.stripInputTag("<\(tag)>\nHello\n</\(tag)>", tag: tag) == "Hello")
+        #expect(GeminiService.stripInputTag("<\(tag)>\nHel", tag: tag) == "Hel")
+        #expect(GeminiService.stripInputTag("Hello\n</input-3af", tag: tag) == "Hello")
+        #expect(GeminiService.stripInputTag("a < b and c", tag: tag) == "a < b and c")
+        #expect(GeminiService.stripInputTag("Hello", tag: tag) == "Hello")
+    }
+}

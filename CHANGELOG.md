@@ -6,6 +6,9 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ## [Unreleased]
 
+### Fixed
+- Translation and proofreading results no longer show the internal delimiter tags (`<input-…>`) that the model sometimes echoed at the start and end of the text (regression in 1.2.0).
+
 ### Security
 - Double-tap ⌘C is skipped while a password manager is the active app (Apple Passwords, 1Password, Bitwarden, KeePassXC, Keychain Access and others), because Apple Passwords does not mark copied passwords as concealed.
 
