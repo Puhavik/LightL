@@ -36,3 +36,7 @@ DerivedData/
 .agents/
 AGENTS.md
 .caveman.json
+
+# Python
+__pycache__/
+*.pyc

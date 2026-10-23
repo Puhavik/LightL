@@ -152,7 +152,6 @@ struct ScreenshotGenerator {
         .frame(width: 412, height: 252)
 
         if let img = renderViewInWindow(view: popoverDark, size: CGSize(width: 412, height: 252), appearanceName: .darkAqua) {
-            saveImage(img, to: assetsDir.appendingPathComponent("popover_dark.png").path)
             saveImage(img, to: screenshotsDir.appendingPathComponent("popover_dark.png").path)
         }
 
@@ -175,36 +174,30 @@ struct ScreenshotGenerator {
         .frame(width: 412, height: 252)
 
         if let img = renderViewInWindow(view: popoverLight, size: CGSize(width: 412, height: 252), appearanceName: .aqua) {
-            saveImage(img, to: assetsDir.appendingPathComponent("popover_light.png").path)
             saveImage(img, to: screenshotsDir.appendingPathComponent("popover_light.png").path)
         }
 
         // 3. Settings AI Model (Light mode)
         let settingsAiLight = windowMockupLight(tab: .aiModel)
         if let img = renderViewInWindow(view: settingsAiLight, size: CGSize(width: 720, height: 530), appearanceName: .aqua) {
-            saveImage(img, to: assetsDir.appendingPathComponent("settings_preview.png").path)
             saveImage(img, to: screenshotsDir.appendingPathComponent("settings_preview.png").path)
-            saveImage(img, to: screenshotsDir.appendingPathComponent("settings_preview_light.png").path)
         }
 
         // 3b. Settings AI Model (Dark mode)
         let settingsAiDark = windowMockupDark(tab: .aiModel)
         if let img = renderViewInWindow(view: settingsAiDark, size: CGSize(width: 720, height: 530), appearanceName: .darkAqua) {
-            saveImage(img, to: assetsDir.appendingPathComponent("settings_preview_dark.png").path)
             saveImage(img, to: screenshotsDir.appendingPathComponent("settings_preview_dark.png").path)
         }
 
         // 4. Settings Translation & Shortcuts (Light)
         let settingsTranslationLight = windowMockupLight(tab: .translation)
         if let img = renderViewInWindow(view: settingsTranslationLight, size: CGSize(width: 720, height: 530), appearanceName: .aqua) {
-            saveImage(img, to: assetsDir.appendingPathComponent("settings_translation.png").path)
             saveImage(img, to: screenshotsDir.appendingPathComponent("settings_translation.png").path)
         }
 
         // 5. Settings Rewrite & Proofreading (Light)
         let settingsRewriteLight = windowMockupLight(tab: .rewrite)
         if let img = renderViewInWindow(view: settingsRewriteLight, size: CGSize(width: 720, height: 530), appearanceName: .aqua) {
-            saveImage(img, to: assetsDir.appendingPathComponent("settings_rewrite.png").path)
             saveImage(img, to: screenshotsDir.appendingPathComponent("settings_rewrite.png").path)
         }
     }
