@@ -21,9 +21,13 @@ public final class AppSettings {
     @ObservationIgnored
     private let defaults = UserDefaults.standard
 
+    /// True when the last attempt to persist the API key to the Keychain failed (key then lives in memory only).
+    public private(set) var keychainSaveFailed = false
+
     public var geminiApiKey: String {
         didSet {
             let saved = KeychainHelper.saveApiKey(geminiApiKey)
+            keychainSaveFailed = !saved
             if saved {
                 defaults.removeObject(forKey: Keys.apiKey)
             }

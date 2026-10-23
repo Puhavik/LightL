@@ -4,7 +4,7 @@ import Carbon
 import AppKit
 @testable import LightL
 
-@Suite("LightL Unit Tests")
+@Suite("LightL Unit Tests", .serialized)
 struct LightLTests {
 
     @Test("ShortcutModel default values and display strings")

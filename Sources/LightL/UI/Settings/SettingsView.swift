@@ -313,6 +313,16 @@ struct AIModelTab: View {
                     .buttonStyle(MacOS27GlassPillButtonStyle(isProminent: true))
                 }
 
+                if settings.keychainSaveFailed {
+                    Label(
+                        L10n.tr(ru: "Не удалось сохранить ключ в Связке ключей: он будет утерян после перезапуска.",
+                                en: "Could not save the key to the Keychain: it will be lost on restart."),
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.system(size: 11))
+                    .foregroundColor(.orange)
+                }
+
                 HStack(spacing: 12) {
                     Button(action: testConnection) {
                         HStack(spacing: 5) {

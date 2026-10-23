@@ -114,7 +114,8 @@ struct ScreenshotGenerator {
         .padding(20)
     }
 
-    @Test("Generate README Screenshots")
+    @Test("Generate README Screenshots",
+          .enabled(if: ProcessInfo.processInfo.environment["LIGHTL_GENERATE_SCREENSHOTS"] == "1"))
     @MainActor
     func generateScreenshots() {
         let baseDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
@@ -178,11 +179,19 @@ struct ScreenshotGenerator {
             saveImage(img, to: screenshotsDir.appendingPathComponent("popover_light.png").path)
         }
 
-        // 3. Settings AI Model (Light mode by default matching native system look)
+        // 3. Settings AI Model (Light mode)
         let settingsAiLight = windowMockupLight(tab: .aiModel)
         if let img = renderViewInWindow(view: settingsAiLight, size: CGSize(width: 720, height: 530), appearanceName: .aqua) {
             saveImage(img, to: assetsDir.appendingPathComponent("settings_preview.png").path)
             saveImage(img, to: screenshotsDir.appendingPathComponent("settings_preview.png").path)
+            saveImage(img, to: screenshotsDir.appendingPathComponent("settings_preview_light.png").path)
+        }
+
+        // 3b. Settings AI Model (Dark mode)
+        let settingsAiDark = windowMockupDark(tab: .aiModel)
+        if let img = renderViewInWindow(view: settingsAiDark, size: CGSize(width: 720, height: 530), appearanceName: .darkAqua) {
+            saveImage(img, to: assetsDir.appendingPathComponent("settings_preview_dark.png").path)
+            saveImage(img, to: screenshotsDir.appendingPathComponent("settings_preview_dark.png").path)
         }
 
         // 4. Settings Translation & Shortcuts (Light)

@@ -11,10 +11,11 @@ public enum KeychainHelper {
     nonisolated(unsafe) public static var inMemoryStorage: [String: String]? = nil
 
     nonisolated(unsafe) public static var isRunningTests: Bool = {
-        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
-        ProcessInfo.processInfo.processName.contains("testing-helper") ||
-        ProcessInfo.processInfo.processName.contains("Test") ||
-        NSClassFromString("XCTest") != nil
+        let name = ProcessInfo.processInfo.processName
+        return ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+            name.contains("testing-helper") ||
+            name.hasSuffix("PackageTests") ||
+            name == "xctest"
     }()
 
     public static func resetForTesting() {

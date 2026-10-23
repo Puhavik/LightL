@@ -100,15 +100,13 @@ cat << EOF > "${APP_BUNDLE}/Contents/Info.plist"
 </plist>
 EOF
 
-# Find signing identity: Developer ID Application -> paid account (REDACTED) -> generic Apple Development
+# Signing identity: SIGNING_IDENTITY env, else Developer ID Application, else Apple Development (local dev only).
+# STRICT_SIGNING=1 (release): no ad-hoc fallback, any signing/verify failure aborts the build.
 DEV_IDENTITY="${SIGNING_IDENTITY:-}"
 if [ -z "$DEV_IDENTITY" ]; then
     DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "Developer ID Application" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 fi
-if [ -z "$DEV_IDENTITY" ]; then
-    DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "REDACTED" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
-fi
-if [ -z "$DEV_IDENTITY" ]; then
+if [ -z "$DEV_IDENTITY" ] && [ "${STRICT_SIGNING:-0}" != "1" ]; then
     DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "Apple Development" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 fi
 
@@ -122,16 +120,27 @@ if [ -f "${PROJECT_DIR}/LightL.entitlements" ]; then
     ENTITLEMENTS_ARG=(--entitlements "${PROJECT_DIR}/LightL.entitlements")
 fi
 
+if [ "${STRICT_SIGNING:-0}" = "1" ] && { [ -z "$DEV_IDENTITY" ] || [ "$DEV_IDENTITY" = "-" ]; }; then
+    echo "Error: STRICT_SIGNING=1 but no Developer ID signing identity available." >&2
+    exit 1
+fi
+
 if [ -n "$DEV_IDENTITY" ] && [ "$DEV_IDENTITY" != "-" ]; then
     echo "==> Signing ${APP_NAME}.app with developer certificate: ${DEV_IDENTITY}..."
-    if ! codesign --force --deep --options runtime --timestamp "${KEYCHAIN_ARG[@]}" "${ENTITLEMENTS_ARG[@]}" --sign "${DEV_IDENTITY}" "${APP_BUNDLE}"; then
-        echo "==> Developer ID signing failed (identity not found or expired), falling back to ad-hoc..."
-        codesign --force --deep --options runtime "${ENTITLEMENTS_ARG[@]}" --sign - "${APP_BUNDLE}"
+    if ! codesign --force --options runtime --timestamp "${KEYCHAIN_ARG[@]}" "${ENTITLEMENTS_ARG[@]}" --sign "${DEV_IDENTITY}" "${APP_BUNDLE}"; then
+        if [ "${STRICT_SIGNING:-0}" = "1" ]; then
+            echo "Error: signing failed and STRICT_SIGNING=1 forbids ad-hoc fallback." >&2
+            exit 1
+        fi
+        echo "==> Signing failed (identity not found or expired), falling back to ad-hoc..."
+        codesign --force --options runtime "${ENTITLEMENTS_ARG[@]}" --sign - "${APP_BUNDLE}"
     fi
 else
-    echo "==> Signing ${APP_NAME}.app (ad-hoc)..."
-    codesign --force --deep --options runtime "${ENTITLEMENTS_ARG[@]}" --sign - "${APP_BUNDLE}"
+    echo "==> Signing ${APP_NAME}.app (ad-hoc, local development only)..."
+    codesign --force --options runtime "${ENTITLEMENTS_ARG[@]}" --sign - "${APP_BUNDLE}"
 fi
+
+codesign --verify --strict --verbose=2 "${APP_BUNDLE}"
 
 echo "=========================================="
 echo "✓ Сборка завершена успешно!"

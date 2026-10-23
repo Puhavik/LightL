@@ -27,10 +27,7 @@ DEV_IDENTITY="${SIGNING_IDENTITY:-}"
 if [ -z "$DEV_IDENTITY" ]; then
     DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "Developer ID Application" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 fi
-if [ -z "$DEV_IDENTITY" ]; then
-    DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "REDACTED" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
-fi
-if [ -z "$DEV_IDENTITY" ]; then
+if [ -z "$DEV_IDENTITY" ] && [ "${STRICT_SIGNING:-0}" != "1" ]; then
     DEV_IDENTITY=$(security find-identity -p codesigning -v 2>/dev/null | grep "Apple Development" | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' || true)
 fi
 
@@ -42,9 +39,17 @@ fi
 if [ -n "$DEV_IDENTITY" ] && [ "$DEV_IDENTITY" != "-" ]; then
     echo "==> Signing ${DMG_NAME} with ${DEV_IDENTITY}..."
     if ! codesign --force --timestamp "${KEYCHAIN_ARG[@]}" --sign "${DEV_IDENTITY}" "${DMG_PATH}"; then
-        echo "==> DMG signing with ${DEV_IDENTITY} failed, falling back to ad-hoc..."
-        codesign --force --sign - "${DMG_PATH}" || true
+        if [ "${STRICT_SIGNING:-0}" = "1" ]; then
+            echo "Error: DMG signing failed and STRICT_SIGNING=1 forbids fallback." >&2
+            exit 1
+        fi
+        echo "==> DMG signing failed, falling back to ad-hoc..."
+        codesign --force --sign - "${DMG_PATH}"
     fi
+    codesign --verify --strict --verbose=2 "${DMG_PATH}"
+elif [ "${STRICT_SIGNING:-0}" = "1" ]; then
+    echo "Error: STRICT_SIGNING=1 but no signing identity available." >&2
+    exit 1
 else
     echo "==> No signing identity provided or found, skipping DMG signing."
 fi

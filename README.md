@@ -128,7 +128,7 @@ LightL supports official Google Gemini models with automatic reasoning/thinking 
 3. Launch **LightL** from Applications or Spotlight.
 
 > [!NOTE]
-> On first launch, if macOS Gatekeeper displays an untrusted developer notice, right-click `LightL.app` in Finder and click **Open**.
+> Release DMGs are signed with Developer ID and notarized by Apple. For unsigned local builds only, right-click `LightL.app` in Finder and click **Open** to bypass Gatekeeper.
 
 ### Build From Source
 Requires macOS 15.0+ (Sequoia) and Xcode 16.0+ (Swift 6.0).
@@ -169,7 +169,7 @@ macOS requires Accessibility permissions so LightL can read selected text and re
 - **UI Framework:** SwiftUI + AppKit integration (`NSPanel`, `NSVisualEffectView`, `NSStatusItem`)
 - **API:** Google Gemini REST API with Server-Sent Events (SSE) streaming support
 - **Secrets Storage:** macOS Keychain via Security framework (`kSecClassGenericPassword`)
-- **Global Key Capture:** Carbon Event HotKeys & CGEventTap double-tap monitors
+- **Global Key Capture:** Carbon Event HotKeys & NSEvent global double-tap monitor
 
 ---
 
