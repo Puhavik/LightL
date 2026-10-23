@@ -4,7 +4,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ---
 
-## [Unreleased]
+## [1.2.0] - 2026-10-23
 
 ### Security
 - **Per-request prompt isolation**: selected text is wrapped in a random per-request tag instead of a fixed `<input>` tag, so it cannot close the delimiter.
