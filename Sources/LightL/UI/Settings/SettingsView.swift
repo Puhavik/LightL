@@ -77,7 +77,9 @@ public struct SettingsView: View {
             // Main Content Layer
             detailContentView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(Color(nsColor: .windowBackgroundColor))
         }
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(width: 680, height: 490)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             if TextCaptureService.isAccessibilityGranted() {

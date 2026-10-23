@@ -7,14 +7,14 @@ import AppKit
 struct ScreenshotGenerator {
 
     @MainActor
-    private func renderViewInWindow<V: View>(view: V, size: CGSize) -> NSImage? {
+    private func renderViewInWindow<V: View>(view: V, size: CGSize, appearanceName: NSAppearance.Name = .aqua) -> NSImage? {
         let win = NSWindow(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless],
             backing: .buffered,
             defer: false
         )
-        win.appearance = NSAppearance(named: .darkAqua)
+        win.appearance = NSAppearance(named: appearanceName)
         win.isOpaque = false
         win.backgroundColor = .clear
 
@@ -46,26 +46,56 @@ struct ScreenshotGenerator {
 
     @MainActor
     @ViewBuilder
-    private func windowMockup(tab: SettingsTab) -> some View {
+    private func windowMockupLight(tab: SettingsTab) -> some View {
         ZStack(alignment: .topLeading) {
             // macOS Window unified body
             HStack(spacing: 0) {
-                // Sidebar background
-                Color(red: 0.13, green: 0.13, blue: 0.15)
+                Color(red: 0.91, green: 0.91, blue: 0.93)
                     .frame(width: 205)
-
-                // Divider line
-                Color.white.opacity(0.08)
+                Color.black.opacity(0.08)
                     .frame(width: 1)
-
-                // Detail content background (solid dark surface)
-                Color(red: 0.16, green: 0.16, blue: 0.18)
+                Color(red: 0.95, green: 0.95, blue: 0.97)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            // Real Settings View
             SettingsView(initialTab: tab)
+                .preferredColorScheme(.light)
 
-            // macOS Window Traffic lights
+            // Traffic lights
+            HStack(spacing: 7) {
+                Circle().fill(Color(red: 1.0, green: 0.36, blue: 0.34)).frame(width: 11, height: 11)
+                Circle().fill(Color(red: 1.0, green: 0.74, blue: 0.18)).frame(width: 11, height: 11)
+                Circle().fill(Color(red: 0.15, green: 0.79, blue: 0.37)).frame(width: 11, height: 11)
+            }
+            .padding(.leading, 12)
+            .padding(.top, 11)
+        }
+        .frame(width: 680, height: 490)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.black.opacity(0.12), lineWidth: 1)
+        )
+        .preferredColorScheme(.light)
+        .padding(20)
+    }
+
+    @MainActor
+    @ViewBuilder
+    private func windowMockupDark(tab: SettingsTab) -> some View {
+        ZStack(alignment: .topLeading) {
+            HStack(spacing: 0) {
+                Color(red: 0.13, green: 0.13, blue: 0.15)
+                    .frame(width: 205)
+                Color.white.opacity(0.08)
+                    .frame(width: 1)
+                Color(red: 0.16, green: 0.16, blue: 0.18)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+
+            SettingsView(initialTab: tab)
+                .preferredColorScheme(.dark)
+
             HStack(spacing: 7) {
                 Circle().fill(Color(red: 1.0, green: 0.36, blue: 0.34)).frame(width: 11, height: 11)
                 Circle().fill(Color(red: 1.0, green: 0.74, blue: 0.18)).frame(width: 11, height: 11)
@@ -87,8 +117,10 @@ struct ScreenshotGenerator {
     @Test("Generate README Screenshots")
     @MainActor
     func generateScreenshots() {
-        let assetsDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("assets")
-        try? FileManager.default.createDirectory(at: assetsDir, withIntermediateDirectories: true)
+        let baseDir = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let assetsDir = baseDir.appendingPathComponent("assets")
+        let screenshotsDir = assetsDir.appendingPathComponent("screenshots")
+        try? FileManager.default.createDirectory(at: screenshotsDir, withIntermediateDirectories: true)
 
         let originalKey = AppSettings.shared.geminiApiKey
         AppSettings.shared.geminiApiKey = "AIzaSyB-demo-key-connected"
@@ -118,8 +150,9 @@ struct ScreenshotGenerator {
         .preferredColorScheme(.dark)
         .frame(width: 412, height: 252)
 
-        if let img = renderViewInWindow(view: popoverDark, size: CGSize(width: 412, height: 252)) {
+        if let img = renderViewInWindow(view: popoverDark, size: CGSize(width: 412, height: 252), appearanceName: .darkAqua) {
             saveImage(img, to: assetsDir.appendingPathComponent("popover_dark.png").path)
+            saveImage(img, to: screenshotsDir.appendingPathComponent("popover_dark.png").path)
         }
 
         // 2. Popover Light
@@ -140,26 +173,30 @@ struct ScreenshotGenerator {
         .preferredColorScheme(.light)
         .frame(width: 412, height: 252)
 
-        if let img = renderViewInWindow(view: popoverLight, size: CGSize(width: 412, height: 252)) {
+        if let img = renderViewInWindow(view: popoverLight, size: CGSize(width: 412, height: 252), appearanceName: .aqua) {
             saveImage(img, to: assetsDir.appendingPathComponent("popover_light.png").path)
+            saveImage(img, to: screenshotsDir.appendingPathComponent("popover_light.png").path)
         }
 
-        // 3. Settings AI Model
-        let settingsAi = windowMockup(tab: .aiModel)
-        if let img = renderViewInWindow(view: settingsAi, size: CGSize(width: 720, height: 530)) {
+        // 3. Settings AI Model (Light mode by default matching native system look)
+        let settingsAiLight = windowMockupLight(tab: .aiModel)
+        if let img = renderViewInWindow(view: settingsAiLight, size: CGSize(width: 720, height: 530), appearanceName: .aqua) {
             saveImage(img, to: assetsDir.appendingPathComponent("settings_preview.png").path)
+            saveImage(img, to: screenshotsDir.appendingPathComponent("settings_preview.png").path)
         }
 
-        // 4. Settings Translation & Shortcuts
-        let settingsTranslation = windowMockup(tab: .translation)
-        if let img = renderViewInWindow(view: settingsTranslation, size: CGSize(width: 720, height: 530)) {
+        // 4. Settings Translation & Shortcuts (Light)
+        let settingsTranslationLight = windowMockupLight(tab: .translation)
+        if let img = renderViewInWindow(view: settingsTranslationLight, size: CGSize(width: 720, height: 530), appearanceName: .aqua) {
             saveImage(img, to: assetsDir.appendingPathComponent("settings_translation.png").path)
+            saveImage(img, to: screenshotsDir.appendingPathComponent("settings_translation.png").path)
         }
 
-        // 5. Settings Rewrite & Proofreading
-        let settingsRewrite = windowMockup(tab: .rewrite)
-        if let img = renderViewInWindow(view: settingsRewrite, size: CGSize(width: 720, height: 530)) {
+        // 5. Settings Rewrite & Proofreading (Light)
+        let settingsRewriteLight = windowMockupLight(tab: .rewrite)
+        if let img = renderViewInWindow(view: settingsRewriteLight, size: CGSize(width: 720, height: 530), appearanceName: .aqua) {
             saveImage(img, to: assetsDir.appendingPathComponent("settings_rewrite.png").path)
+            saveImage(img, to: screenshotsDir.appendingPathComponent("settings_rewrite.png").path)
         }
     }
 }

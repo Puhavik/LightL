@@ -36,9 +36,9 @@
 Select text anywhere — in your IDE, browser, chat, or mail client — and press a hotkey to instantly view a translation or fix grammar and style in-place.
 
 <p align="center">
-  <img src="assets/popover_dark.png" width="48%" alt="LightL Popover Dark Mode" />
+  <img src="assets/screenshots/popover_dark.png" width="48%" alt="LightL Popover Dark Mode" />
   &nbsp;
-  <img src="assets/popover_light.png" width="48%" alt="LightL Popover Light Mode" />
+  <img src="assets/screenshots/popover_light.png" width="48%" alt="LightL Popover Light Mode" />
 </p>
 
 ---
@@ -73,14 +73,14 @@ Select text anywhere — in your IDE, browser, chat, or mail client — and pres
     <td align="center"><b>Correction & Style Tuning</b></td>
   </tr>
   <tr>
-    <td><img src="assets/settings_preview.png" width="100%" alt="LightL AI and Model Settings" /></td>
-    <td><img src="assets/settings_rewrite.png" width="100%" alt="LightL Rewrite and Correction Settings" /></td>
+    <td><img src="assets/screenshots/settings_preview.png" width="100%" alt="LightL AI and Model Settings" /></td>
+    <td><img src="assets/screenshots/settings_rewrite.png" width="100%" alt="LightL Rewrite and Correction Settings" /></td>
   </tr>
   <tr>
     <td align="center" colspan="2"><b>Keyboard Shortcuts & Target Language</b></td>
   </tr>
   <tr>
-    <td align="center" colspan="2"><img src="assets/settings_translation.png" width="60%" alt="LightL Shortcuts and Language Settings" /></td>
+    <td align="center" colspan="2"><img src="assets/screenshots/settings_translation.png" width="60%" alt="LightL Shortcuts and Language Settings" /></td>
   </tr>
 </table>
 
