@@ -14,7 +14,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 - **Release pipeline**: strict signing and notarization with Gatekeeper verification, SHA-pinned actions, least-privilege permissions.
 
 ### Changed
-- Double-tap ⌘C is now off by default; privacy notes added to README and Settings.
+- Double-tap ⌘C stays on by default but skips text copied from password managers (concealed clipboard); privacy notes added to README and Settings.
 - API key is saved on Enter, Save or closing Settings (not on every keystroke); hotkeys are re-registered only when shortcuts change.
 
 ---

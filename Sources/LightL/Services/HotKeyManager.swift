@@ -173,6 +173,9 @@ public final class HotKeyManager {
                 Task { @MainActor in
                     // Yield briefly for target app to finish updating clipboard
                     try? await Task.sleep(nanoseconds: 50_000_000)
+                    // Password managers mark copied secrets as concealed: never send those to the API.
+                    let types = NSPasteboard.general.types ?? []
+                    if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) { return }
                     HotKeyManager.shared.onTranslate?()
                 }
             }
