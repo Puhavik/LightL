@@ -40,3 +40,9 @@ AGENTS.md
 # Python
 __pycache__/
 *.pyc
+
+# Promo materials (local only)
+stories/
+DESIGN_SYSTEM.md
+scripts/generate_stories.py
+assets/screenshots/settings_preview_dark.png
