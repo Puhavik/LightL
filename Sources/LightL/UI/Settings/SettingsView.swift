@@ -93,7 +93,7 @@ public struct SettingsView: View {
             HStack {
                 Spacer()
             }
-            .frame(height: 12)
+            .frame(height: 28)
 
             // App Brand Banner
             HStack(spacing: 8) {

@@ -77,12 +77,10 @@ Select text anywhere — in your IDE, browser, chat, or mail client — and pres
     <td><img src="assets/settings_rewrite.png" width="100%" alt="LightL Rewrite and Correction Settings" /></td>
   </tr>
   <tr>
-    <td align="center"><b>Hotkeys & Translation Target</b></td>
-    <td align="center"><b>Floating Popover in Action</b></td>
+    <td align="center" colspan="2"><b>Keyboard Shortcuts & Target Language</b></td>
   </tr>
   <tr>
-    <td><img src="assets/settings_translation.png" width="100%" alt="LightL Shortcuts and Language Settings" /></td>
-    <td><img src="assets/popover_dark.png" width="100%" alt="LightL Popover Preview" /></td>
+    <td align="center" colspan="2"><img src="assets/settings_translation.png" width="60%" alt="LightL Shortcuts and Language Settings" /></td>
   </tr>
 </table>
 
