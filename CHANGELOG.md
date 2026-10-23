@@ -4,6 +4,13 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ---
 
+## [Unreleased]
+
+### Fixed
+- App crashed on launch when installed from the release DMG ("could not load resource bundle"). Icons are now loaded from the app bundle first; SwiftPM's resource bundle is only used when running from the build tree. CI now launches the packaged app as a smoke test.
+
+---
+
 ## [1.2.1] - 2026-10-23
 
 ### Fixed

@@ -20,19 +20,22 @@ extension NSImage {
             return img
         }
 
-        // 2. Try Bundle.module (when running via SPM)
+        // 2. Try Bundle.module (when running via SPM). It traps if the resource bundle cannot be opened,
+        // so never touch it inside a packaged .app.
         #if SWIFT_PACKAGE
-        if let img = Bundle.module.image(forResource: "AppIcon") {
+        if Bundle.main.bundleURL.pathExtension != "app", let img = Bundle.module.image(forResource: "AppIcon") {
             return img
         }
-        if let img = Bundle.module.image(forResource: "AppIcon_1024") {
+        if Bundle.main.bundleURL.pathExtension != "app", let img = Bundle.module.image(forResource: "AppIcon_1024") {
             return img
         }
-        if let url = Bundle.module.url(forResource: "AppIcon_1024", withExtension: "png"),
+        if Bundle.main.bundleURL.pathExtension != "app",
+           let url = Bundle.module.url(forResource: "AppIcon_1024", withExtension: "png"),
            let img = NSImage(contentsOf: url) {
             return img
         }
-        if let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
+        if Bundle.main.bundleURL.pathExtension != "app",
+           let url = Bundle.module.url(forResource: "AppIcon", withExtension: "icns"),
            let img = NSImage(contentsOf: url) {
             return img
         }

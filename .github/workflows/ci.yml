@@ -57,3 +57,32 @@ jobs:
 
       - name: Run Tests
         run: swift test -v
+
+  app-smoke:
+    name: Packaged app launches (macOS 15)
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: Build app bundle
+        run: VERSION=v0.0.0 ./scripts/build_app.sh
+
+      - name: Launch smoke test
+        run: |
+          # Run a copy without the build tree: SwiftPM's Bundle.module falls back to the absolute build path,
+          # which hides missing-resource crashes on CI but crashes on users' machines.
+          cp -R LightL.app "$RUNNER_TEMP/LightL.app"
+          rm -rf .build
+          "$RUNNER_TEMP/LightL.app/Contents/MacOS/LightL" > launch.log 2>&1 &
+          PID=$!
+          sleep 8
+          if ! kill -0 "$PID" 2>/dev/null; then
+            cat launch.log
+            echo "App exited during launch" >&2
+            exit 1
+          fi
+          kill "$PID"

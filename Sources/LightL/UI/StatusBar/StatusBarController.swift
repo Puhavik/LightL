@@ -21,12 +21,6 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     public static let defaultMenuBarIcon: NSImage = {
-        #if SWIFT_PACKAGE
-        if let img = Bundle.module.image(forResource: "MenuBarIcon") {
-            img.isTemplate = true
-            return img
-        }
-        #endif
         if let img = Bundle.main.image(forResource: "MenuBarIcon") {
             img.isTemplate = true
             return img
@@ -36,6 +30,14 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
             img.isTemplate = true
             return img
         }
+        // Bundle.module traps if the SwiftPM resource bundle cannot be opened (e.g. flat bundle built on CI),
+        // so only touch it outside a packaged .app (swift run / swift test).
+        #if SWIFT_PACKAGE
+        if Bundle.main.bundleURL.pathExtension != "app", let img = Bundle.module.image(forResource: "MenuBarIcon") {
+            img.isTemplate = true
+            return img
+        }
+        #endif
         return drawVectorMenuBarIcon()
     }()
 
