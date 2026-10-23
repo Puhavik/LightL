@@ -6,37 +6,31 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ## [1.2.2] - 2026-10-23
 
-### Fixed
-- App crashed on launch when installed from the release DMG ("could not load resource bundle"). Icons are now loaded from the app bundle first; SwiftPM's resource bundle is only used when running from the build tree. CI now launches the packaged app as a smoke test.
-
----
-
-## [1.2.1] - 2026-10-23
-
-> **Broken:** the app crashes on launch when installed from the DMG. Fixed in 1.2.2.
-
-### Fixed
-- Translation and proofreading results no longer show the internal delimiter tags (`<input-…>`) that the model sometimes echoed at the start and end of the text (regression in 1.2.0).
+Changes since 1.1.0 (versions 1.2.0 and 1.2.1 were withdrawn because the app crashed on launch when installed from the DMG).
 
 ### Security
-- Double-tap ⌘C is skipped while a password manager is the active app (Apple Passwords, 1Password, Bitwarden, KeePassXC, Keychain Access and others), because Apple Passwords does not mark copied passwords as concealed.
+- **Prompt isolation**: selected text is wrapped in a random per-request tag instead of a fixed `<input>` tag, so it cannot close the delimiter and inject instructions.
+- **Safer text replacement**: replacement is cancelled if the selection changed while the request was running; responses cut off at the length limit are rejected instead of overwriting your text; selections over 12,000 characters are refused with a clear message.
+- **Password managers**: double-tap ⌘C is skipped while Apple Passwords, 1Password, Bitwarden, KeePassXC, Dashlane, LastPass, Proton Pass or Keychain Access is the active app, and when the clipboard is marked as concealed.
+- **Model ID validation**: custom model IDs may contain only letters, digits, `.`, `-` and `_`, so a pasted value can no longer redirect the request.
+- **Keychain**: the legacy key is deleted only after it is safely re-saved; Settings warns when the key could not be stored.
+- **Streaming errors**: bad key, quota and other 4xx errors are reported immediately instead of triggering a second request.
+- **Privacy**: README and Settings now explain that selected text is sent to Google Gemini; the startup connection warm-up only happens when an API key is set.
+- **Release pipeline**: strict Developer ID signing, notarization with stapling, Gatekeeper and signature verification, build provenance attestation (`gh attestation verify`), SHA-pinned GitHub Actions, least-privilege permissions, tag validation.
 
----
-
-## [1.2.0] - 2026-10-23
-
-> **Broken:** the app crashes on launch when installed from the DMG. Fixed in 1.2.2.
-
-### Security
-- **Per-request prompt isolation**: selected text is wrapped in a random per-request tag instead of a fixed `<input>` tag, so it cannot close the delimiter.
-- **Safer replacement**: in-place replacement is cancelled if the selection changed while the request was running; responses cut off at the length limit are rejected instead of overwriting text; selections over 12,000 characters are refused.
-- **Model ID validation**: custom model IDs may contain only letters, digits, `.`, `-` and `_`.
-- **Keychain**: the legacy key is deleted only after it is safely re-saved; Settings warns when the key could not be saved.
-- **Release pipeline**: strict signing and notarization with Gatekeeper verification, SHA-pinned actions, least-privilege permissions.
+### Fixed
+- App crashed on launch when installed from the release DMG ("could not load resource bundle"). Icons are loaded from the app bundle first; CI now launches the packaged app as a smoke test.
+- Translation and proofreading results no longer show internal delimiter tags at the start and end of the text.
 
 ### Changed
-- Double-tap ⌘C stays on by default but skips text copied from password managers (concealed clipboard); privacy notes added to README and Settings.
-- API key is saved on Enter, Save or closing Settings (not on every keystroke); hotkeys are re-registered only when shortcuts change.
+- API key is saved on Enter, Save or when Settings closes (not on every keystroke); the key is stored only after a successful connection test; hotkeys are re-registered only when shortcuts change.
+- Version and build number: bundle version comes from the release tag, build number is the commit count.
+- Documentation: README privacy section, corrected notes on Gatekeeper and the double-tap monitor.
+
+### Internal
+- CI: ShellCheck, gitleaks secret scan, packaged-app launch smoke test, Dependabot for Actions.
+- Tests: 52 automated tests (prompt isolation, truncation handling, model ID validation, password-manager guard); the screenshot generator runs only with `LIGHTL_GENERATE_SCREENSHOTS=1`.
+- Repository cleanup: duplicate screenshots removed, local-only files ignored.
 
 ---
 
