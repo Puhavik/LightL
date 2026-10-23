@@ -4,7 +4,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ---
 
-## [Unreleased]
+## [1.2.1] - 2026-10-23
 
 ### Fixed
 - Translation and proofreading results no longer show the internal delimiter tags (`<input-…>`) that the model sometimes echoed at the start and end of the text (regression in 1.2.0).
