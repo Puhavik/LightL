@@ -7,9 +7,8 @@ on:
   workflow_dispatch:
     inputs:
       tag_name:
-        description: 'Release tag (e.g. v1.0.2)'
+        description: 'Release tag (e.g. v1.2.0)'
         required: true
-        default: 'v1.0.2'
 
 permissions:
   contents: read
@@ -47,7 +46,7 @@ jobs:
           else
             TAG="${GITHUB_REF#refs/tags/}"
           fi
-          if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$'; then
+          if ! echo "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "Invalid release tag: $TAG" >&2
             exit 1
           fi

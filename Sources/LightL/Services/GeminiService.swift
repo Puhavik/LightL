@@ -3,6 +3,9 @@ import Foundation
 public enum GeminiError: LocalizedError {
     case missingApiKey
     case invalidURL
+    case invalidModel
+    case inputTooLong(limit: Int)
+    case truncated
     case badServerResponse(statusCode: Int, message: String)
     case emptyResponse
     case decodingError(String)
@@ -19,6 +22,21 @@ public enum GeminiError: LocalizedError {
             return L10n.tr(
                 ru: "Неверный URL запроса к API.",
                 en: "Invalid API request URL."
+            )
+        case .invalidModel:
+            return L10n.tr(
+                ru: "Недопустимый ID модели. Разрешены буквы, цифры, '.', '-' и '_'.",
+                en: "Invalid model ID. Only letters, digits, '.', '-' and '_' are allowed."
+            )
+        case .inputTooLong(let limit):
+            return L10n.tr(
+                ru: "Выделенный текст слишком длинный (максимум \(limit) символов).",
+                en: "Selected text is too long (maximum \(limit) characters)."
+            )
+        case .truncated:
+            return L10n.tr(
+                ru: "Ответ модели обрезан по лимиту длины. Исходный текст не изменён.",
+                en: "The model response was cut off at the length limit. Your original text was left unchanged."
             )
         case .badServerResponse(let code, let msg):
             return L10n.tr(
@@ -46,6 +64,9 @@ public enum GeminiError: LocalizedError {
 
 public actor GeminiService {
     public static let shared = GeminiService()
+
+    /// Upper bound on selected text sent to the API; keeps the response within maxOutputTokens.
+    public static let maxInputCharacters = 12_000
 
     private let session: URLSession
 
@@ -83,6 +104,9 @@ public actor GeminiService {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return "" }
 
+        guard trimmedText.count <= Self.maxInputCharacters else {
+            throw GeminiError.inputTooLong(limit: Self.maxInputCharacters)
+        }
         let (tag, userPrompt) = Self.wrapInput(trimmedText)
 
         // Highly compressed system prompt for sub-200ms TTFT
@@ -111,6 +135,9 @@ public actor GeminiService {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return "" }
 
+        guard trimmedText.count <= Self.maxInputCharacters else {
+            throw GeminiError.inputTooLong(limit: Self.maxInputCharacters)
+        }
         let (tag, userPrompt) = Self.wrapInput(trimmedText)
 
         let systemPrompt: String
@@ -127,6 +154,7 @@ public actor GeminiService {
             apiKey: apiKey,
             model: model,
             temperature: mode == .proofread ? 0.1 : 0.4,
+            rejectTruncated: true,
             onChunk: nil
         )
     }
@@ -180,13 +208,18 @@ public actor GeminiService {
         apiKey: String,
         model: String,
         temperature: Double,
+        rejectTruncated: Bool = false,
         onChunk: (@Sendable (String) -> Void)?
     ) async throws -> String {
         var cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
         if cleanModel.hasPrefix("models/") {
             cleanModel = String(cleanModel.dropFirst(7))
         }
-        let encodedModel = cleanModel.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? cleanModel
+        guard !cleanModel.isEmpty, !cleanModel.contains(".."),
+              cleanModel.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "." || $0 == "-" || $0 == "_") }) else {
+            throw GeminiError.invalidModel
+        }
+        let encodedModel = cleanModel
 
         let action = onChunk != nil ? "streamGenerateContent?alt=sse" : "generateContent"
         let urlString = "https://generativelanguage.googleapis.com/v1beta/models/\(encodedModel):\(action)"
@@ -257,7 +290,8 @@ public actor GeminiService {
                 systemInstruction: systemInstruction,
                 apiKey: apiKey,
                 generationConfig: generationConfig,
-                canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil
+                canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil,
+                rejectTruncated: rejectTruncated
             )
         }
     }
@@ -429,7 +463,8 @@ public actor GeminiService {
         systemInstruction: String,
         apiKey: String,
         generationConfig: [String: Any],
-        canRetryWithoutThinking: Bool
+        canRetryWithoutThinking: Bool,
+        rejectTruncated: Bool = false
     ) async throws -> String {
         let request = try buildURLRequest(
             url: url,
@@ -468,7 +503,8 @@ public actor GeminiService {
                         systemInstruction: systemInstruction,
                         apiKey: apiKey,
                         generationConfig: fallbackConfig,
-                        canRetryWithoutThinking: false
+                        canRetryWithoutThinking: false,
+                        rejectTruncated: rejectTruncated
                     )
                 }
             }
@@ -481,7 +517,16 @@ public actor GeminiService {
             throw GeminiError.badServerResponse(statusCode: httpResponse.statusCode, message: errorMessage)
         }
 
+        if rejectTruncated, Self.isTruncated(data) {
+            throw GeminiError.truncated
+        }
         return try Self.parseResponseData(data)
+    }
+
+    internal static func isTruncated(_ data: Data) -> Bool {
+        let dto = (try? JSONDecoder().decode(GeminiResponseDTO.self, from: data))
+            ?? (try? JSONDecoder().decode([GeminiResponseDTO].self, from: data))?.first
+        return dto?.candidates?.first?.finishReason == "MAX_TOKENS"
     }
 
     internal struct GeminiErrorResponse: Decodable, Sendable {

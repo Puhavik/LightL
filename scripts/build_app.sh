@@ -54,9 +54,14 @@ if [ -n "$RESOURCE_BUNDLE" ] && [ -d "$RESOURCE_BUNDLE" ]; then
     cp -R "${RESOURCE_BUNDLE}" "${APP_BUNDLE}/Contents/Resources/"
 fi
 
-GIT_TAG="$(git describe --tags --abbrev=0 2>/dev/null || echo 'v1.1.0')"
-RAW_VERSION="${VERSION:-${GIT_TAG}}"
+RAW_VERSION="${VERSION:-$(git describe --tags --abbrev=0 2>/dev/null || true)}"
+if [ -z "${RAW_VERSION}" ]; then
+    echo "Error: no version. Set VERSION=vX.Y.Z or create a git tag." >&2
+    exit 1
+fi
 APP_VERSION="${RAW_VERSION#v}"
+# Numeric, monotonically increasing build number
+BUILD_NUMBER="$(git rev-list --count HEAD 2>/dev/null || echo 1)"
 
 cat << EOF > "${APP_BUNDLE}/Contents/Info.plist"
 <?xml version="1.0" encoding="UTF-8"?>
@@ -87,7 +92,7 @@ cat << EOF > "${APP_BUNDLE}/Contents/Info.plist"
     <key>CFBundleShortVersionString</key>
     <string>${APP_VERSION}</string>
     <key>CFBundleVersion</key>
-    <string>${APP_VERSION}</string>
+    <string>${BUILD_NUMBER}</string>
     <key>LSMinimumSystemVersion</key>
     <string>15.0</string>
     <key>LSUIElement</key>

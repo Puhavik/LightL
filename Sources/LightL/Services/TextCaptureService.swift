@@ -8,8 +8,11 @@ public struct CapturedSelection: Sendable {
     public let bounds: CGRect?
     public let mouseLocation: CGPoint
     public let frontmostAppPID: pid_t?
+    /// True when the text was read through the Accessibility API, so it can be re-read to detect selection changes.
+    public let viaAccessibility: Bool
 
-    public init(text: String, bounds: CGRect?, mouseLocation: CGPoint, frontmostAppPID: pid_t? = nil) {
+    public init(text: String, bounds: CGRect?, mouseLocation: CGPoint, frontmostAppPID: pid_t? = nil, viaAccessibility: Bool = false) {
+        self.viaAccessibility = viaAccessibility
         self.text = text
         self.bounds = bounds
         self.mouseLocation = mouseLocation
@@ -67,7 +70,7 @@ public final class TextCaptureService: Sendable {
 
         // 1. Try Accessibility API (direct process query for minimal latency)
         if let (axText, axBounds) = getSelectionViaAccessibility(pid: frontmostPID), !axText.isEmpty {
-            return CapturedSelection(text: axText, bounds: axBounds, mouseLocation: mouseLoc, frontmostAppPID: frontmostPID)
+            return CapturedSelection(text: axText, bounds: axBounds, mouseLocation: mouseLoc, frontmostAppPID: frontmostPID, viaAccessibility: true)
         }
 
         // 2. Fallback to synthetic Cmd+C
@@ -81,8 +84,15 @@ public final class TextCaptureService: Sendable {
     /// Replaces the currently selected text in the active app with `newText`.
     /// First attempts via direct Accessibility API (zero clipboard modification, native Undo).
     /// Falls back to simulated ⌘+V with asynchronous clipboard restoration.
-    public func replaceSelection(with newText: String) async -> Bool {
+    /// When `original` is given and was captured via Accessibility, the replacement is skipped (returns false)
+    /// if the current selection no longer matches it, so unrelated text is never overwritten.
+    public func replaceSelection(with newText: String, verifying original: CapturedSelection? = nil) async -> Bool {
         guard Self.isAccessibilityGranted(prompt: false) else {
+            return false
+        }
+
+        if let original, original.viaAccessibility,
+           getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0 != original.text {
             return false
         }
 

@@ -4,6 +4,21 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ---
 
+## [Unreleased]
+
+### Security
+- **Per-request prompt isolation**: selected text is wrapped in a random per-request tag instead of a fixed `<input>` tag, so it cannot close the delimiter.
+- **Safer replacement**: in-place replacement is cancelled if the selection changed while the request was running; responses cut off at the length limit are rejected instead of overwriting text; selections over 12,000 characters are refused.
+- **Model ID validation**: custom model IDs may contain only letters, digits, `.`, `-` and `_`.
+- **Keychain**: the legacy key is deleted only after it is safely re-saved; Settings warns when the key could not be saved.
+- **Release pipeline**: strict signing and notarization with Gatekeeper verification, SHA-pinned actions, least-privilege permissions.
+
+### Changed
+- Double-tap ⌘C is now off by default; privacy notes added to README and Settings.
+- API key is saved on Enter, Save or closing Settings (not on every keystroke); hotkeys are re-registered only when shortcuts change.
+
+---
+
 ## [1.1.0] - 2026-10-22
 
 ### Added
@@ -17,10 +32,10 @@ All notable user-facing features, improvements, and fixes for LightL.
 - **Modernized macOS 27 Liquid Glass UI**: Enhanced popover with dynamic blur materials, continuous rounded corner clipping, and animated glass button styles.
 - **Improved Status Bar Menu**: Menu header now includes an interactive version badge (`NSMenuItemBadge`), and the Accessibility indicator automatically hides once permission is granted.
 - **Instant Thread-Safe Localization**: Zero-latency runtime localization using `OSAllocatedUnfairLock` with instant reactive UI updates on language change.
-- **Dynamic Asset Generation**: Replaced heavy static binary iconsets with dynamic programmatic asset generation during build.
+- **Icons**: Removed the heavy static iconset folder; app icons are produced by `scripts/generate_icons.swift`.
 
 ### Security
-- **Prompt Injection Defense**: Text sent to Gemini is sanitized and encapsulated in structured XML tags (`<input>...</input>`) with escaping to prevent prompt override attacks.
+- **Prompt Injection Defense**: Text sent to Gemini is sanitized and encapsulated in delimiter tags to reduce prompt override attacks (the fixed `<input>` tag was replaced by a per-request random tag after 1.1.0).
 - **API Key Sanitization**: Automatic filtering of trailing/leading whitespaces, hidden newlines, and carriage returns when saving API keys.
 - **Hardened Keychain Storage**: Added data protection keychain fallback, access group support, and memory isolation locks for secure credential storage.
 

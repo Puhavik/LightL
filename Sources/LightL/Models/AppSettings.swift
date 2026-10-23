@@ -119,7 +119,7 @@ public final class AppSettings {
         } else {
             self.selectedModelId = GeminiModelOption.defaultModel.modelId
         }
-        self.doubleCmdCEnabled = defaults.object(forKey: Keys.doubleCmdCEnabled) as? Bool ?? true
+        self.doubleCmdCEnabled = defaults.object(forKey: Keys.doubleCmdCEnabled) as? Bool ?? false
 
         if let modeString = defaults.string(forKey: Keys.rewriteMode) {
             self.rewriteMode = RewriteMode(rawValue: modeString) ?? .proofread

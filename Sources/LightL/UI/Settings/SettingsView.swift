@@ -260,9 +260,6 @@ struct AIModelTab: View {
                                 .onSubmit {
                                     saveApiKey()
                                 }
-                                .onChange(of: apiKeyInput) { _, _ in
-                                    saveApiKey()
-                                }
                         } else {
                             HStack {
                                 Text(maskedApiKey)
@@ -454,12 +451,12 @@ struct AIModelTab: View {
         isTestingApiKey = true
         testResult = nil
         let key = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        settings.geminiApiKey = key
         let model = settings.selectedModelId
 
         Task {
             do {
                 try await GeminiService.shared.testApiKey(apiKey: key, model: model)
+                self.settings.geminiApiKey = key
                 self.testResult = .success(L10n.tr(
                     ru: "Подключение успешно! Модель \(model) готова.",
                     en: "Connection successful! Model \(model) is ready."
@@ -516,8 +513,8 @@ struct TranslationTab: View {
                     .font(.system(size: 13))
 
                 Text(L10n.tr(
-                    ru: "При быстром двойном нажатии ⌘+C выделенный фрагмент текста копируется и сразу открывается перевод в плавающем окне.",
-                    en: "Quickly pressing ⌘+C twice copies the selected text and immediately displays the translation in a floating window."
+                    ru: "При быстром двойном нажатии ⌘+C выделенный фрагмент текста копируется и сразу открывается перевод в плавающем окне. Приватность: выделенный текст отправляется в Google Gemini. Не используйте с паролями и другими секретами.",
+                    en: "Quickly pressing ⌘+C twice copies the selected text and immediately displays the translation in a floating window. Privacy: the selected text is sent to Google Gemini. Don't use this with passwords or other secrets."
                 ))
                 .font(.system(size: 11.5))
                 .foregroundColor(.secondary)

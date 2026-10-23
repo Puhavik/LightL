@@ -119,8 +119,10 @@ public enum KeychainHelper {
             return key
         }
         if service == serviceName, let legacyKey = fetchKey(account: account, service: legacyServiceName) {
-            saveApiKey(legacyKey, account: account, service: serviceName)
-            deleteApiKey(account: account, service: legacyServiceName)
+            // Remove the legacy item only after the new one is safely stored.
+            if saveApiKey(legacyKey, account: account, service: serviceName) {
+                deleteApiKey(account: account, service: legacyServiceName)
+            }
             return legacyKey
         }
         return nil

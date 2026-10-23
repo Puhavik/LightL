@@ -23,8 +23,10 @@ public final class AppCoordinator {
     private init() {}
 
     public func start() {
-        Task {
-            await gemini.prewarm()
+        if !settings.geminiApiKey.isEmpty {
+            Task {
+                await gemini.prewarm()
+            }
         }
 
         statusBarController = StatusBarController()
@@ -87,7 +89,12 @@ public final class AppCoordinator {
         }
     }
 
+    private var appliedHotKeyState: (ShortcutModel, ShortcutModel, Bool)?
+
     private func applyCurrentHotKeys() {
+        let state = (settings.translateShortcut, settings.rewriteShortcut, settings.doubleCmdCEnabled)
+        if let applied = appliedHotKeyState, applied == state { return }
+        appliedHotKeyState = state
         let (translateSuccess, rewriteSuccess) = hotKeyManager.updateHotKeys(
             translateShortcut: settings.translateShortcut,
             rewriteShortcut: settings.rewriteShortcut,
@@ -205,7 +212,11 @@ public final class AppCoordinator {
                                     }
                                     self.currentReplaceTask?.cancel()
                                     self.currentReplaceTask = Task { [weak self] in
-                                        _ = await self?.textCapture.replaceSelection(with: partialText)
+                                        if await self?.textCapture.replaceSelection(with: partialText, verifying: selection) == false {
+                                            self?.statusBarController.triggerErrorBlink(
+                                                message: L10n.tr(ru: "Выделение изменилось, замена отменена", en: "Selection changed, replacement cancelled")
+                                            )
+                                        }
                                     }
                                 }
                             )
@@ -243,7 +254,11 @@ public final class AppCoordinator {
                         }
                         self.currentReplaceTask?.cancel()
                         self.currentReplaceTask = Task { [weak self] in
-                            _ = await self?.textCapture.replaceSelection(with: translated)
+                            if await self?.textCapture.replaceSelection(with: translated, verifying: selection) == false {
+                                            self?.statusBarController.triggerErrorBlink(
+                                                message: L10n.tr(ru: "Выделение изменилось, замена отменена", en: "Selection changed, replacement cancelled")
+                                            )
+                                        }
                         }
                     }
                 )
@@ -336,7 +351,7 @@ public final class AppCoordinator {
                 self.statusBarController.setLoading(false)
 
                 // Replace selected text in active app
-                let success = await self.textCapture.replaceSelection(with: corrected)
+                let success = await self.textCapture.replaceSelection(with: corrected, verifying: selection)
                 guard self.currentRewriteTaskId == taskId else { return }
                 if success {
                     self.statusBarController.triggerSuccessFlash()
