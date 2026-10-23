@@ -29,3 +29,16 @@ struct HardeningTests {
         #expect(!GeminiService.isTruncated(ok))
     }
 }
+
+@Suite("Double-tap secret guard")
+struct DoubleTapGuardTests {
+    @Test("skips password managers and concealed clipboard, allows normal apps")
+    func guardRules() {
+        let plain = ["public.utf8-plain-text"]
+        #expect(HotKeyManager.shouldSkipDoubleTap(pasteboardTypes: plain, frontmostBundleID: "com.apple.Passwords"))
+        #expect(HotKeyManager.shouldSkipDoubleTap(pasteboardTypes: plain, frontmostBundleID: "com.bitwarden.desktop"))
+        #expect(HotKeyManager.shouldSkipDoubleTap(pasteboardTypes: plain + ["org.nspasteboard.ConcealedType"], frontmostBundleID: "com.apple.Safari"))
+        #expect(!HotKeyManager.shouldSkipDoubleTap(pasteboardTypes: plain, frontmostBundleID: "com.apple.Safari"))
+        #expect(!HotKeyManager.shouldSkipDoubleTap(pasteboardTypes: plain, frontmostBundleID: nil))
+    }
+}

@@ -37,7 +37,7 @@ final class DoubleTapTracker: Sendable {
 public final class HotKeyManager {
     public static let shared = HotKeyManager()
 
-    static let secretAppBundleIDs: Set<String> = [
+    nonisolated static let secretAppBundleIDs: Set<String> = [
         "com.apple.Passwords",
         "com.apple.keychainaccess",
         "com.1password.1password",
@@ -48,6 +48,14 @@ public final class HotKeyManager {
         "com.lastpass.lastpassmacdesktop",
         "com.protonpass.pass.macos"
     ]
+
+    /// Never send secrets to the API: skip concealed clipboard content and password-manager apps
+    /// (Apple Passwords does not mark its clipboard as concealed).
+    nonisolated static func shouldSkipDoubleTap(pasteboardTypes: [String], frontmostBundleID: String?) -> Bool {
+        if pasteboardTypes.contains("org.nspasteboard.ConcealedType") { return true }
+        if let id = frontmostBundleID, secretAppBundleIDs.contains(id) { return true }
+        return false
+    }
 
     public var onTranslate: (() -> Void)?
     public var onRewrite: (() -> Void)?
@@ -185,12 +193,10 @@ public final class HotKeyManager {
                 Task { @MainActor in
                     // Yield briefly for target app to finish updating clipboard
                     try? await Task.sleep(nanoseconds: 50_000_000)
-                    // Never send secrets to the API: skip concealed clipboard content and password-manager apps
-                    // (Apple Passwords does not mark its clipboard as concealed).
-                    let types = NSPasteboard.general.types ?? []
-                    if types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) { return }
-                    if let id = NSWorkspace.shared.frontmostApplication?.bundleIdentifier,
-                       HotKeyManager.secretAppBundleIDs.contains(id) { return }
+                    if HotKeyManager.shouldSkipDoubleTap(
+                        pasteboardTypes: (NSPasteboard.general.types ?? []).map(\.rawValue),
+                        frontmostBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier
+                    ) { return }
                     HotKeyManager.shared.onTranslate?()
                 }
             }
