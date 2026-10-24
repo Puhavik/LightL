@@ -354,14 +354,16 @@ public final class AppCoordinator {
             guard !Task.isCancelled && self.currentRewriteTaskId == taskId else { return }
 
             var selection = captured
+            var copyOnly = false
             if captured.isAmbiguousLineCopy {
                 if self.ambiguousRewriteGate.confirm(text: captured.text, at: ProcessInfo.processInfo.systemUptime) {
                     selection = captured.confirmingLineCopy()
+                    copyOnly = true
                 } else {
                     self.statusBarController.triggerErrorBlink(
                         message: L10n.tr(
-                            ru: "Выделена целая строка? Нажмите ещё раз в течение 5 с для подтверждения или выделите текст без переноса строки",
-                            en: "Whole line copied. Press again within 5 s to confirm, or select the text without the line break"
+                            ru: "Скопирована целая строка. Нажмите ещё раз в течение 5 с, чтобы получить результат в буфере обмена, или выделите текст без переноса строки",
+                            en: "Whole line copied. Press again within 5 s to get the result on the clipboard, or select the text without the line break"
                         )
                     )
                     return
@@ -404,6 +406,15 @@ public final class AppCoordinator {
 
                 guard self.currentRewriteTaskId == taskId else { return }
                 self.statusBarController.setLoading(false)
+
+                if copyOnly {
+                    // The capture may not be a real selection, so never paste into the document: hand the result over via the clipboard.
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(corrected, forType: .string)
+                    self.statusBarController.triggerSuccessFlash()
+                    return
+                }
 
                 // Replace selected text in active app
                 let success = await self.textCapture.replaceSelection(with: corrected, verifying: selection)

@@ -14,7 +14,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ### Fixed
 - Clipboard restore now waits 2 s after the paste is posted, so slow apps no longer paste the old clipboard instead of the replacement.
-- In editors that copy the whole caret line when nothing is selected (VS Code, JetBrains, Sublime), a clipboard capture that looks like such a line can be translated but is never pasted back over the document.
+- In editors that copy the whole caret line when nothing is selected (VS Code, JetBrains, Sublime), a clipboard capture that looks like such a line is never pasted back over the document: translation shows without Replace, and rewrite needs a second hotkey press within 5 s and then puts the result on the clipboard.
 - The menu bar spinner now stays until the translation finishes, including the non-streaming fallback after an interrupted stream.
 - A model is remembered as rejecting `thinkingBudget` only after the retry without it succeeds.
 - Streaming updates are throttled (about 20 per second) and a late chunk can no longer overwrite the final result in the popover.
