@@ -6,6 +6,8 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-10-24
+
 ### Changed
 - Updated Gemini model lineup to `gemini-3.5-flash-lite` (default, ~0.5s), `gemini-3.1-flash-lite` (~1.0s), `gemini-3.5-flash` (~1.0s), and `gemini-3.6-flash` (~0.9s) with `thinkingLevel: "minimal"`.
 - **Double-tap ⌘C is now off by default for new installs** (it sends the selection to Google Gemini); installs that already have an API key keep their current setting. Change it in Settings → Translation.
