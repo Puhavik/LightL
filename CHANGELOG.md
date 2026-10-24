@@ -56,6 +56,9 @@ Changes since 1.1.0 (versions 1.2.0 and 1.2.1 were withdrawn because the app cra
 - Tests: 52 automated tests (prompt isolation, truncation handling, model ID validation, password-manager guard); the screenshot generator runs only with `LIGHTL_GENERATE_SCREENSHOTS=1`.
 - Repository cleanup: duplicate screenshots removed, local-only files ignored.
 
+### Internal
+- `AppCoordinator` takes its collaborators through protocols; new tests cover coordinator flows, settings migration, Gemini edge cases and `notarize.sh`. See TESTING.md.
+
 ---
 
 ## [1.1.0] - 2026-10-22

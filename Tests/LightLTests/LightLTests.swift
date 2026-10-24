@@ -1307,6 +1307,32 @@ struct LightLTests {
         #expect(await TextCaptureService.shared.replaceSelection(with: "let y = 2", verifying: selection) == false)
     }
 
+    @Test("replaceSelection leaves an empty clipboard empty after the restore")
+    @MainActor
+    func replaceSelectionRestoresEmptyClipboard() async throws {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+
+        TextCaptureService.accessibilityOverrideForTesting = true
+        TextCaptureService.skipSimulatePasteForTesting = true
+        TextCaptureService.forcePasteboardFallbackForTesting = true
+        TextCaptureService.pasteboardRestoreDelayForTesting = 50_000_000
+        defer {
+            TextCaptureService.accessibilityOverrideForTesting = nil
+            TextCaptureService.skipSimulatePasteForTesting = false
+            TextCaptureService.forcePasteboardFallbackForTesting = false
+            TextCaptureService.pasteboardRestoreDelayForTesting = nil
+        }
+
+        let replaced = await TextCaptureService.shared.replaceSelection(with: "Replacement \(UUID().uuidString)")
+        #expect(replaced)
+        let deadline = Date().addingTimeInterval(2)
+        while TextCaptureService.shared.hasPendingRestore && Date() < deadline {
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+        #expect(pasteboard.string(forType: .string) == nil)
+    }
+
     @Test("Ambiguous rewrite needs a second press within the window")
     func ambiguousRewriteGate() {
         var gate = AmbiguousRewriteGate()

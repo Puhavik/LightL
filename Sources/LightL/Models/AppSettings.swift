@@ -19,7 +19,7 @@ public final class AppSettings {
     }
 
     @ObservationIgnored
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
     /// True when the last attempt to persist the API key to the Keychain failed (key then lives in memory only).
     public private(set) var keychainSaveFailed = false
@@ -100,8 +100,13 @@ public final class AppSettings {
         }
     }
 
-    private init() {
-        let hasPriorDefaults = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?.keys.contains { $0.hasPrefix("LightL_") } ?? false
+    private convenience init() {
+        self.init(defaults: .standard, domain: Bundle.main.bundleIdentifier)
+    }
+
+    internal init(defaults: UserDefaults, domain: String?) {
+        self.defaults = defaults
+        let hasPriorDefaults = defaults.persistentDomain(forName: domain ?? "")?.keys.contains { $0.hasPrefix("LightL_") } ?? false
         var hasExistingInstall = hasPriorDefaults
         if let key = KeychainHelper.loadApiKey(), !key.isEmpty {
             hasExistingInstall = true

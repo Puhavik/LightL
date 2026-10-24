@@ -24,6 +24,9 @@ jobs:
       - name: ShellCheck
         run: shellcheck scripts/*.sh
 
+      - name: Test notarize script
+        run: ./scripts/test_notarize.sh
+
   secrets-scan:
     name: Secret scan (gitleaks)
     runs-on: ubuntu-latest

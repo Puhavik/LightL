@@ -33,23 +33,52 @@ struct AmbiguousRewriteGate {
 public final class AppCoordinator {
     public static let shared = AppCoordinator()
 
-    private let settings = AppSettings.shared
-    private let textCapture = TextCaptureService.shared
-    private let gemini = GeminiService.shared
+    private let settings: AppSettings
+    private let textCapture: any TextCapturing
+    private let gemini: any TextTransforming
     private let hotKeyManager = HotKeyManager.shared
 
-    private var statusBarController: StatusBarController!
-    private var translationPanel: FloatingTranslationPanel!
+    private var statusBarController: (any StatusIndicating)!
+    private var translationPanel: (any TranslationPresenting)!
 
-    private var currentTranslateTask: Task<Void, Never>?
+    internal var currentTranslateTask: Task<Void, Never>?
     private var currentTranslateTaskId = UUID()
-    private var currentRewriteTask: Task<Void, Never>?
+    internal var currentRewriteTask: Task<Void, Never>?
     private var currentRewriteTaskId = UUID()
     private var currentReplaceTask: Task<Void, Never>?
     private var ambiguousRewriteGate = AmbiguousRewriteGate()
     private var settingsObserver: (any NSObjectProtocol)?
 
-    private init() {}
+    private init() {
+        settings = AppSettings.shared
+        textCapture = TextCaptureService.shared
+        gemini = GeminiService.shared
+    }
+
+    internal init(
+        settings: AppSettings,
+        textCapture: any TextCapturing,
+        gemini: any TextTransforming,
+        statusBar: any StatusIndicating,
+        panel: any TranslationPresenting
+    ) {
+        self.settings = settings
+        self.textCapture = textCapture
+        self.gemini = gemini
+        self.statusBarController = statusBar
+        self.translationPanel = panel
+        installDismissHandler()
+    }
+
+    private func installDismissHandler() {
+        translationPanel.onDismiss = { [weak self] in
+            guard let self = self else { return }
+            self.currentTranslateTaskId = UUID()
+            self.currentTranslateTask?.cancel()
+            self.currentTranslateTask = nil
+            self.statusBarController.setLoading(false)
+        }
+    }
 
     public func start() {
         if !settings.geminiApiKey.isEmpty {
@@ -58,19 +87,14 @@ public final class AppCoordinator {
             }
         }
 
-        statusBarController = StatusBarController()
-        statusBarController.onOpenSettings = {
+        let realStatusBar = StatusBarController()
+        realStatusBar.onOpenSettings = {
             SettingsWindowController.shared.show()
         }
+        statusBarController = realStatusBar
 
         translationPanel = FloatingTranslationPanel()
-        translationPanel.onDismiss = { [weak self] in
-            guard let self = self else { return }
-            self.currentTranslateTaskId = UUID()
-            self.currentTranslateTask?.cancel()
-            self.currentTranslateTask = nil
-            self.statusBarController.setLoading(false)
-        }
+        installDismissHandler()
 
         setupHotKeyCallbacks()
         applyCurrentHotKeys()
@@ -162,7 +186,7 @@ public final class AppCoordinator {
 
     // MARK: - Scenario 1: Translation (Floating Popover)
 
-    private func handleTranslateTrigger() {
+    internal func handleTranslateTrigger() {
         currentRewriteTask?.cancel()
         currentRewriteTask = nil
 
@@ -322,7 +346,7 @@ public final class AppCoordinator {
 
     // MARK: - Scenario 2: In-place Proofreading / Rewrite
 
-    private func handleRewriteTrigger() {
+    internal func handleRewriteTrigger() {
         currentTranslateTaskId = UUID()
         currentTranslateTask?.cancel()
         currentTranslateTask = nil
