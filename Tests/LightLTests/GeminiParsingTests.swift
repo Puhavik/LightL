@@ -9,9 +9,9 @@ extension LightLTests {
     @Test("GeminiModelOption list and default model")
     func geminiModelsTests() {
         #expect(GeminiModelOption.defaultModel.modelId == "gemini-3.5-flash-lite")
-        #expect(GeminiModelOption.availableModels.count >= 5)
-        #expect(GeminiModelOption.availableModels.contains(where: { $0.modelId == "gemini-2.5-flash" }))
-        #expect(GeminiModelOption.availableModels.contains(where: { $0.modelId == "gemini-3.8-flash" }))
+        #expect(GeminiModelOption.availableModels.count == 4)
+        #expect(GeminiModelOption.availableModels.contains(where: { $0.modelId == "gemini-3.1-flash-lite" }))
+        #expect(GeminiModelOption.availableModels.contains(where: { $0.modelId == "gemini-3.6-flash" }))
     }
 
     @Test("GeminiError localized descriptions")
@@ -135,21 +135,40 @@ extension LightLTests {
         #expect(parsed == "Первая часть перевода. Вторая часть перевода.")
     }
 
-    @Test("GeminiModelOption contains argon and 2.5 flash")
+    @Test("GeminiModelOption contains flash lite and 3.6 flash")
     func geminiModelOptionAndSupportsThinking() {
-        // 1. GeminiModelOption contains gemini-4-argon and gemini-2.5-flash
-        let argonOption = GeminiModelOption.availableModels.first(where: { $0.modelId == "gemini-4-argon" })
-        #expect(argonOption != nil)
-        #expect(argonOption?.modelId == "gemini-4-argon")
-        #expect(argonOption?.id == "gemini-4-argon")
-        #expect(argonOption?.localizedDisplayName == "Gemini 4 Argon")
-        #expect(!argonOption!.localizedDescription.isEmpty)
+        let flash31Option = GeminiModelOption.availableModels.first(where: { $0.modelId == "gemini-3.1-flash-lite" })
+        #expect(flash31Option != nil)
+        #expect(flash31Option?.modelId == "gemini-3.1-flash-lite")
+        #expect(flash31Option?.id == "gemini-3.1-flash-lite")
+        #expect(flash31Option?.localizedDisplayName == "Gemini 3.1 Flash-Lite")
+        #expect(!flash31Option!.localizedDescription.isEmpty)
 
-        let flash25Option = GeminiModelOption.availableModels.first(where: { $0.modelId == "gemini-2.5-flash" })
-        #expect(flash25Option != nil)
-        #expect(flash25Option?.modelId == "gemini-2.5-flash")
-        #expect(flash25Option?.localizedDisplayName == "Gemini 2.5 Flash")
-        #expect(!flash25Option!.localizedDescription.isEmpty)
+        let flash36Option = GeminiModelOption.availableModels.first(where: { $0.modelId == "gemini-3.6-flash" })
+        #expect(flash36Option != nil)
+        #expect(flash36Option?.modelId == "gemini-3.6-flash")
+        #expect(flash36Option?.localizedDisplayName == "Gemini 3.6 Flash")
+        #expect(!flash36Option!.localizedDescription.isEmpty)
+    }
+
+    @Test("GeminiService thinkingConfig selects minimal level for 3.x and zero budget for 2.x")
+    func geminiThinkingConfigSelection() {
+        let config35 = GeminiService.thinkingConfig(for: "gemini-3.5-flash-lite")
+        #expect(config35["thinkingLevel"] as? String == "minimal")
+        #expect(config35["thinkingBudget"] == nil)
+
+        let config31 = GeminiService.thinkingConfig(for: "gemini-3.1-flash-lite")
+        #expect(config31["thinkingLevel"] as? String == "minimal")
+
+        let config25 = GeminiService.thinkingConfig(for: "gemini-2.5-flash")
+        #expect(config25["thinkingBudget"] as? Int == 0)
+        #expect(config25["thinkingLevel"] == nil)
+
+        let config20 = GeminiService.thinkingConfig(for: "gemini-2.0-flash")
+        #expect(config20["thinkingBudget"] as? Int == 0)
+
+        let configPrefixed = GeminiService.thinkingConfig(for: "models/gemini-2.5-flash")
+        #expect(configPrefixed["thinkingBudget"] as? Int == 0)
     }
 
     @Test("GeminiService API key sanitization filtering newlines, carriage returns, and whitespace")

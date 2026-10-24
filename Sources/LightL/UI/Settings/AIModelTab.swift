@@ -20,6 +20,13 @@ struct AIModelTab: View {
     @State private var customModelText = ""
     @State private var modelDebounceTask: Task<Void, Never>? = nil
 
+    init(settings: AppSettings = .shared) {
+        self.settings = settings
+        let isKnown = GeminiModelOption.availableModels.contains { $0.modelId == settings.selectedModelId }
+        _isCustomModel = State(initialValue: !isKnown)
+        _customModelText = State(initialValue: !isKnown ? settings.selectedModelId : "")
+    }
+
     var body: some View {
         VStack(spacing: 14) {
             // Card: API Key
@@ -159,7 +166,7 @@ struct AIModelTab: View {
                     HStack {
                         Text(L10n.tr(ru: "ID модели:", en: "Model ID:"))
                             .font(.system(size: 12))
-                        TextField(L10n.tr(ru: "например: gemini-2.5-flash", en: "e.g. gemini-2.5-flash"), text: $customModelText)
+                        TextField(L10n.tr(ru: "например: gemini-3.1-flash-lite", en: "e.g. gemini-3.1-flash-lite"), text: $customModelText)
                             .textFieldStyle(.roundedBorder)
                             .onSubmit {
                                 commitCustomModel()

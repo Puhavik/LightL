@@ -10,18 +10,14 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
 
     public var localizedDisplayName: String {
         switch modelId {
-        case "gemini-2.5-flash":
-            return "Gemini 2.5 Flash"
         case "gemini-3.5-flash-lite":
             return L10n.tr(ru: "Gemini 3.5 Flash-Lite (Рекомендуется)", en: "Gemini 3.5 Flash-Lite (Recommended)")
-        case "gemini-3.8-flash":
-            return "Gemini 3.8 Flash"
+        case "gemini-3.1-flash-lite":
+            return "Gemini 3.1 Flash-Lite"
+        case "gemini-3.5-flash":
+            return "Gemini 3.5 Flash"
         case "gemini-3.6-flash":
             return "Gemini 3.6 Flash"
-        case "gemini-flash-latest":
-            return "Gemini Flash (Latest alias)"
-        case "gemini-4-argon":
-            return "Gemini 4 Argon"
         default:
             return modelId
         }
@@ -29,35 +25,25 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
 
     public var localizedDescription: String {
         switch modelId {
-        case "gemini-2.5-flash":
-            return L10n.tr(
-                ru: "Флагманская быстрая модель Gemini 2.5 с адаптивным мышлением (режим thinking отключен для мгновенного перевода).",
-                en: "Flagship fast Gemini 2.5 model with adaptive reasoning (thinking mode disabled for instant translation)."
-            )
         case "gemini-3.5-flash-lite":
             return L10n.tr(
-                ru: "Сверхбыстрая легковесная модель без рассуждений (thinking). Мгновенный перевод за ~200-400мс.",
-                en: "Ultra-fast lightweight model without thinking overhead. Near-instant responses (~200-400ms)."
+                ru: "Основная рекомендуемая модель. Сверхбыстрый ответ за ~0.5с.",
+                en: "Primary recommended model. Ultra-fast responses in ~0.5s."
             )
-        case "gemini-3.8-flash":
+        case "gemini-3.1-flash-lite":
             return L10n.tr(
-                ru: "Флагманская Flash-модель (режим thinking принудительно отключен для максимальной скорости).",
-                en: "Flagship Flash model (thinking mode disabled for maximum speed)."
+                ru: "Самая экономичная и быстрая модель. Ответ за ~1.0с.",
+                en: "Most economical and fast model. Responses in ~1.0s."
+            )
+        case "gemini-3.5-flash":
+            return L10n.tr(
+                ru: "Сбалансированная модель для повседневных задач. Ответ за ~1.0с.",
+                en: "Balanced model for everyday translation. Responses in ~1.0s."
             )
         case "gemini-3.6-flash":
             return L10n.tr(
-                ru: "Сбалансированная модель без размышлений.",
-                en: "Balanced model without thinking overhead."
-            )
-        case "gemini-flash-latest":
-            return L10n.tr(
-                ru: "Автоматически использует самую свежую Flash-модель.",
-                en: "Automatically points to the newest Flash model release."
-            )
-        case "gemini-4-argon":
-            return L10n.tr(
-                ru: "Флагманская модель поколения Gemini 4.",
-                en: "Flagship next-gen Gemini 4 model."
+                ru: "Повышенное качество перевода сложных текстов. Ответ за ~0.9с.",
+                en: "Higher quality translation for complex texts. Responses in ~0.9s."
             )
         default:
             return ""
@@ -65,13 +51,11 @@ public struct GeminiModelOption: Identifiable, Hashable, Codable, Sendable {
     }
 
     public static let availableModels: [GeminiModelOption] = [
-        GeminiModelOption(modelId: "gemini-2.5-flash"),
         GeminiModelOption(modelId: "gemini-3.5-flash-lite"),
-        GeminiModelOption(modelId: "gemini-3.8-flash"),
-        GeminiModelOption(modelId: "gemini-3.6-flash"),
-        GeminiModelOption(modelId: "gemini-flash-latest"),
-        GeminiModelOption(modelId: "gemini-4-argon")
+        GeminiModelOption(modelId: "gemini-3.1-flash-lite"),
+        GeminiModelOption(modelId: "gemini-3.5-flash"),
+        GeminiModelOption(modelId: "gemini-3.6-flash")
     ]
 
-    public static let defaultModel = availableModels[1] // gemini-3.5-flash-lite
+    public static let defaultModel = availableModels.first(where: { $0.modelId == "gemini-3.5-flash-lite" }) ?? availableModels[0]
 }

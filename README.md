@@ -111,12 +111,14 @@ LightL supports official Google Gemini models with automatic reasoning/thinking 
 
 | Model ID | Recommended For | Speed | Thinking Overhead |
 |:---|:---|:---:|:---:|
-| **`gemini-3.5-flash-lite`** *(Default)* | Everyday translation & rapid proofreading | ⚡️ ~200–400ms | None |
-| **`gemini-3.8-flash`** | Complex syntax, idioms, advanced nuance | 🚀 ~400–700ms | Suppressed |
-| **`gemini-2.5-flash`** | Proven high-speed balanced baseline | ⚡️ ~300–500ms | Suppressed |
-| **`gemini-3.6-flash`** | Fast balanced translation | ⚡️ ~300–500ms | None |
-| **`gemini-4-argon`** | Next-generation flagship model | 🚀 ~400–700ms | Suppressed |
+| **`gemini-3.5-flash-lite`** *(Default)* | Everyday translation & rapid proofreading | ⚡️ ~0.5s | Minimal |
+| **`gemini-3.1-flash-lite`** | Most economical, lightweight translation | ⚡️ ~1.0s | Minimal |
+| **`gemini-3.5-flash`** | Balanced everyday translation | ⚡️ ~1.0s | Minimal |
+| **`gemini-3.6-flash`** | High-quality translation for complex texts | ⚡️ ~0.9s | Minimal |
 | **Custom Model** | Any valid Gemini model name entered manually | Custom | Custom |
+
+> [!NOTE]
+> Older models (`gemini-2.5-flash`, `gemini-3.8-flash`, `gemini-4-argon`) were removed: `gemini-2.5-flash` returns 404 ("no longer available"), while `gemini-3.7`, `gemini-3.8`, and `gemini-4-argon` do not support `thinkingLevel: "minimal"` (TTFT 2.3–3.6s on `low`).
 
 ---
 

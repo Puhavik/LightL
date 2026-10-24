@@ -158,7 +158,7 @@ public actor GeminiService {
             throw GeminiError.missingApiKey
         }
 
-        // Lightweight ping with zero thinking budget for sub-second confirmation
+        // Lightweight ping with minimal thinking for sub-second confirmation
         _ = try await generate(
             prompt: "Ping",
             systemInstruction: "Respond with OK",
@@ -200,6 +200,17 @@ public actor GeminiService {
             }
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    internal static func thinkingConfig(for model: String) -> [String: Any] {
+        var cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanModel.hasPrefix("models/") {
+            cleanModel = String(cleanModel.dropFirst(7))
+        }
+        if cleanModel.hasPrefix("gemini-2") {
+            return ["thinkingBudget": 0]
+        }
+        return ["thinkingLevel": "minimal"]
     }
 
     /// Returns the config for retrying a 400 that rejects thinkingConfig; callers remember the model once the retry succeeds.
@@ -272,9 +283,7 @@ public actor GeminiService {
 
         // Eliminate thinking latency; models that reject it are remembered and retried without thinkingConfig
         if !modelsRejectingThinking.contains(cleanModel) {
-            generationConfig["thinkingConfig"] = [
-                "thinkingBudget": 0
-            ]
+            generationConfig["thinkingConfig"] = Self.thinkingConfig(for: cleanModel)
         }
 
         if let onChunk = onChunk {

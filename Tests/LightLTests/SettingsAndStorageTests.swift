@@ -167,7 +167,7 @@ extension LightLTests {
         // 2. selectedModelId
         let originalModel = settings.selectedModelId
         let startCount2 = counter.count
-        settings.selectedModelId = (originalModel == "gemini-3.5-flash-lite") ? "gemini-3.8-flash" : "gemini-3.5-flash-lite"
+        settings.selectedModelId = (originalModel == "gemini-3.5-flash-lite") ? "gemini-3.6-flash" : "gemini-3.5-flash-lite"
         #expect(counter.count > startCount2)
         settings.selectedModelId = originalModel
 

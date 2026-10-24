@@ -7,6 +7,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 ## [Unreleased]
 
 ### Changed
+- Updated Gemini model lineup to `gemini-3.5-flash-lite` (default, ~0.5s), `gemini-3.1-flash-lite` (~1.0s), `gemini-3.5-flash` (~1.0s), and `gemini-3.6-flash` (~0.9s) with `thinkingLevel: "minimal"`.
 - **Double-tap ⌘C is now off by default for new installs** (it sends the selection to Google Gemini); installs that already have an API key keep their current setting. Change it in Settings → Translation.
 - Translations cut off at the length limit now fail with a clear message instead of showing partial text that could be pasted over the original.
 - Replacing text re-checks that the selection is unchanged, also for apps that are read through the clipboard.
