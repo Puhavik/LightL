@@ -124,9 +124,10 @@ public actor GeminiService {
             apiKey: apiKey,
             model: model,
             temperature: 0.1,
+            rejectTruncated: true,
             onChunk: cleanedChunk
         )
-        return Self.stripInputTag(result, tag: tag)
+        return Self.stripInputTag(result, tag: tag, isFinal: true)
     }
 
     public func rewrite(
@@ -164,7 +165,7 @@ public actor GeminiService {
             rejectTruncated: true,
             onChunk: nil
         )
-        return Self.stripInputTag(result, tag: tag)
+        return Self.stripInputTag(result, tag: tag, isFinal: true)
     }
 
     public func testApiKey(apiKey: String, model: String = "gemini-3.5-flash-lite") async throws {
@@ -183,22 +184,6 @@ public actor GeminiService {
         )
     }
 
-    internal static func supportsThinking(_ cleanModel: String) -> Bool {
-        supportsThinking(cleanModel: cleanModel)
-    }
-
-    internal static func supportsThinking(cleanModel: String) -> Bool {
-        let isLite = cleanModel.contains("lite")
-        return !isLite && (
-            cleanModel.contains("3.8") ||
-            cleanModel.contains("2.5") ||
-            cleanModel.contains("2.0") ||
-            cleanModel.contains("thinking") ||
-            cleanModel.contains("argon") ||
-            cleanModel.contains("gemini-4")
-        )
-    }
-
     /// Wraps user text in a per-request random tag so selected text cannot close the delimiter and inject instructions.
     internal static func wrapInput(_ text: String) -> (tag: String, prompt: String) {
         let tag = "input-" + UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12).lowercased()
@@ -207,10 +192,10 @@ public actor GeminiService {
     }
 
     /// Removes the delimiter tags if the model echoes them, including a partial tag still streaming in.
-    internal static func stripInputTag(_ text: String, tag: String) -> String {
+    internal static func stripInputTag(_ text: String, tag: String, isFinal: Bool = false) -> String {
         let open = "<\(tag)>", close = "</\(tag)>"
         var result = text.replacingOccurrences(of: open, with: "").replacingOccurrences(of: close, with: "")
-        if let lt = result.range(of: "<", options: .backwards) {
+        if !isFinal, let lt = result.range(of: "<", options: .backwards) {
             let tail = String(result[lt.lowerBound...])
             if open.hasPrefix(tail) || close.hasPrefix(tail) {
                 result.removeSubrange(lt.lowerBound...)
@@ -256,12 +241,10 @@ public actor GeminiService {
             "maxOutputTokens": maxTokens
         ]
 
-        // Eliminate thinking latency for reasoning models
-        if Self.supportsThinking(cleanModel: cleanModel) {
-            generationConfig["thinkingConfig"] = [
-                "thinkingBudget": 0
-            ]
-        }
+        // Eliminate thinking latency; models that reject it are retried without thinkingConfig on a 400
+        generationConfig["thinkingConfig"] = [
+            "thinkingBudget": 0
+        ]
 
         if let onChunk = onChunk {
             do {
@@ -286,6 +269,9 @@ public actor GeminiService {
                 if case GeminiError.badServerResponse(let code, _) = error, (400..<500).contains(code) {
                     throw error
                 }
+                if case GeminiError.truncated = error {
+                    throw error
+                }
                 // Otherwise fall back to non-streaming generateContent
             }
 
@@ -300,7 +286,8 @@ public actor GeminiService {
                 systemInstruction: systemInstruction,
                 apiKey: apiKey,
                 generationConfig: generationConfig,
-                canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil
+                canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil,
+                rejectTruncated: rejectTruncated
             )
             onChunk(nonStreamResult)
             return nonStreamResult
@@ -442,30 +429,9 @@ public actor GeminiService {
 
         do {
             for try await rawLine in asyncBytes.lines {
-                let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
-                if line.hasPrefix("data:") {
-                    var payload = String(line.dropFirst(5))
-                    if payload.hasPrefix(" ") {
-                        payload.removeFirst()
-                    }
-                    if !sseBuffer.isEmpty {
-                        sseBuffer += "\n"
-                    }
-                    sseBuffer += payload
-                } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                    if !sseBuffer.isEmpty {
-                        let payload = sseBuffer
-                        sseBuffer = ""
-                        try Self.processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
-                    }
-                }
+                try Self.consumeSSELine(rawLine, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
             }
-
-            if !sseBuffer.isEmpty {
-                let payload = sseBuffer
-                sseBuffer = ""
-                try Self.processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
-            }
+            try Self.flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
         } catch {
             if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
                 throw CancellationError()
@@ -622,7 +588,9 @@ public actor GeminiService {
                     throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован фильтрами безопасности Gemini.", en: "Response blocked by Gemini safety filters."))
                 } else if finish == "RECITATION" {
                     throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован из-за совпадения с источником (RECITATION).", en: "Response blocked due to recitation check."))
-                } else if parts.isEmpty && finish != "STOP" && finish != "MAX_TOKENS" && accumulatedText.isEmpty {
+                } else if finish == "MAX_TOKENS" {
+                    throw GeminiError.truncated
+                } else if parts.isEmpty && finish != "STOP" && accumulatedText.isEmpty {
                     throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован Gemini (причина: \(finish)).", en: "Response blocked by Gemini (reason: \(finish))."))
                 }
             }
@@ -637,6 +605,38 @@ public actor GeminiService {
         }
     }
 
+    internal static func consumeSSELine(
+        _ rawLine: String,
+        buffer: inout String,
+        accumulatedText: inout String,
+        onChunk: ((String) -> Void)?
+    ) throws {
+        let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
+        if line.hasPrefix("data:") {
+            var payload = String(line.dropFirst(5))
+            if payload.hasPrefix(" ") {
+                payload.removeFirst()
+            }
+            if !buffer.isEmpty {
+                buffer += "\n"
+            }
+            buffer += payload
+        } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
+            try flushSSEBuffer(&buffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+        }
+    }
+
+    internal static func flushSSEBuffer(
+        _ buffer: inout String,
+        accumulatedText: inout String,
+        onChunk: ((String) -> Void)?
+    ) throws {
+        guard !buffer.isEmpty else { return }
+        let payload = buffer
+        buffer = ""
+        try processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
+    }
+
     internal static func parseSSELines<S: Sequence>(
         _ lines: S,
         onChunk: ((String) -> Void)? = nil
@@ -645,30 +645,9 @@ public actor GeminiService {
         var sseBuffer = ""
 
         for rawLine in lines {
-            let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
-            if line.hasPrefix("data:") {
-                var payload = String(line.dropFirst(5))
-                if payload.hasPrefix(" ") {
-                    payload.removeFirst()
-                }
-                if !sseBuffer.isEmpty {
-                    sseBuffer += "\n"
-                }
-                sseBuffer += payload
-            } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
-                if !sseBuffer.isEmpty {
-                    let payload = sseBuffer
-                    sseBuffer = ""
-                    try processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
-                }
-            }
+            try consumeSSELine(rawLine, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
         }
-
-        if !sseBuffer.isEmpty {
-            let payload = sseBuffer
-            sseBuffer = ""
-            try processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
-        }
+        try flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
 
         let trimmedResult = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedResult.isEmpty else {

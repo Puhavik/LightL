@@ -985,7 +985,7 @@ struct LightLTests {
 
     // MARK: - Gemini Model Option & Thinking Support Tests
 
-    @Test("GeminiModelOption and GeminiService.supportsThinking for argon and gemini-4")
+    @Test("GeminiModelOption contains argon and 2.5 flash")
     func geminiModelOptionAndSupportsThinking() {
         // 1. GeminiModelOption contains gemini-4-argon and gemini-2.5-flash
         let argonOption = GeminiModelOption.availableModels.first(where: { $0.modelId == "gemini-4-argon" })
@@ -1000,28 +1000,6 @@ struct LightLTests {
         #expect(flash25Option?.modelId == "gemini-2.5-flash")
         #expect(flash25Option?.localizedDisplayName == "Gemini 2.5 Flash")
         #expect(!flash25Option!.localizedDescription.isEmpty)
-
-        // 2. GeminiService.supportsThinking returns true for argon and gemini-4 models
-        #expect(GeminiService.supportsThinking(cleanModel: "gemini-4-argon"))
-        #expect(GeminiService.supportsThinking("gemini-4-argon"))
-        #expect(GeminiService.supportsThinking("gemini-4-flash"))
-        #expect(GeminiService.supportsThinking("gemini-4.0-pro"))
-        #expect(GeminiService.supportsThinking("argon-pro"))
-        #expect(GeminiService.supportsThinking("argon"))
-        #expect(GeminiService.supportsThinking("models/gemini-4-argon"))
-
-        // 3. GeminiService.supportsThinking returns true for 3.8, 2.5, 2.0, thinking models
-        #expect(GeminiService.supportsThinking("gemini-3.8-flash"))
-        #expect(GeminiService.supportsThinking("gemini-2.5-flash"))
-        #expect(GeminiService.supportsThinking("gemini-2.0-flash"))
-        #expect(GeminiService.supportsThinking("gemini-experimental-thinking"))
-
-        // 4. GeminiService.supportsThinking returns false for lite models even if containing 4 or argon
-        #expect(!GeminiService.supportsThinking("gemini-3.5-flash-lite"))
-        #expect(!GeminiService.supportsThinking("gemini-4-lite"))
-        #expect(!GeminiService.supportsThinking("argon-lite"))
-        #expect(!GeminiService.supportsThinking("gemini-3.6-flash"))
-        #expect(!GeminiService.supportsThinking("gemini-flash-latest"))
     }
 
     // MARK: - API Key Sanitization Tests
@@ -1199,20 +1177,17 @@ struct LightLTests {
         #expect(!ShortcutModel.isSystemReserved(keyCode: UInt32(kVK_ANSI_M), modifiers: cmdOpt))
     }
 
-    @Test("GeminiService preserves accumulated text when stream ends with MAX_TOKENS")
-    func geminiMaxTokensPreservesStreamedText() throws {
+    @Test("GeminiService rejects a stream that ends with MAX_TOKENS")
+    func geminiMaxTokensRejectsStream() {
         let maxTokensSSE = [
             "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Translated portion before token limit.\"}]}}]}",
             "",
             "data: {\"candidates\": [{\"content\": {\"parts\": []}, \"finishReason\": \"MAX_TOKENS\"}]}",
             ""
         ]
-        var progressiveChunks: [String] = []
-        let result = try GeminiService.parseSSELines(maxTokensSSE) { chunk in
-            progressiveChunks.append(chunk)
+        #expect(throws: GeminiError.self) {
+            _ = try GeminiService.parseSSELines(maxTokensSSE)
         }
-        #expect(result == "Translated portion before token limit.")
-        #expect(progressiveChunks.contains("Translated portion before token limit."))
     }
 
     @Test("KeychainHelper in-memory mock storage roundtrip and isolation")

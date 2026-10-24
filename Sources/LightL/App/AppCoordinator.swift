@@ -94,7 +94,6 @@ public final class AppCoordinator {
     private func applyCurrentHotKeys() {
         let state = (settings.translateShortcut, settings.rewriteShortcut, settings.doubleCmdCEnabled)
         if let applied = appliedHotKeyState, applied == state { return }
-        appliedHotKeyState = state
         let (translateSuccess, rewriteSuccess) = hotKeyManager.updateHotKeys(
             translateShortcut: settings.translateShortcut,
             rewriteShortcut: settings.rewriteShortcut,
@@ -105,6 +104,12 @@ public final class AppCoordinator {
         }
         if !rewriteSuccess {
             print("[LightL] Failed to register rewrite shortcut: \(settings.rewriteShortcut.displayString)")
+        }
+        appliedHotKeyState = (translateSuccess && rewriteSuccess) ? state : nil
+        if !translateSuccess || !rewriteSuccess {
+            statusBarController?.triggerErrorBlink(
+                message: L10n.tr(ru: "Сочетание клавиш недоступно или занято", en: "Shortcut is unavailable or already in use")
+            )
         }
     }
 
@@ -225,7 +230,7 @@ public final class AppCoordinator {
                 )
 
                 guard !Task.isCancelled && self.currentTranslateTaskId == taskId else {
-                    self.statusBarController.setLoading(false)
+                    if self.currentTranslateTaskId == taskId { self.statusBarController.setLoading(false) }
                     return
                 }
 
@@ -264,7 +269,7 @@ public final class AppCoordinator {
                 )
             } catch {
                 guard !Task.isCancelled && self.currentTranslateTaskId == taskId else {
-                    self.statusBarController.setLoading(false)
+                    if self.currentTranslateTaskId == taskId { self.statusBarController.setLoading(false) }
                     return
                 }
                 self.statusBarController.setLoading(false)

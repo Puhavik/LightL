@@ -69,7 +69,7 @@ public final class TextCaptureService: Sendable {
         let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
 
         // 1. Try Accessibility API (direct process query for minimal latency)
-        if let (axText, axBounds) = getSelectionViaAccessibility(pid: frontmostPID), !axText.isEmpty {
+        if let (axText, axBounds) = await getSelectionViaAccessibility(pid: frontmostPID), !axText.isEmpty {
             return CapturedSelection(text: axText, bounds: axBounds, mouseLocation: mouseLoc, frontmostAppPID: frontmostPID, viaAccessibility: true)
         }
 
@@ -91,14 +91,17 @@ public final class TextCaptureService: Sendable {
             return false
         }
 
-        if let original, original.viaAccessibility,
-           getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0 != original.text {
-            return false
+        if let original {
+            let current = original.viaAccessibility
+                ? await getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0
+                : await getSelectionViaClipboard()
+            if current != original.text { return false }
         }
 
         // 1. Try direct Accessibility API replacement (0ms, zero clipboard touch, preserves native Undo)
         let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
-        if !Self.forcePasteboardFallbackForTesting, replaceSelectionViaAccessibility(newText: newText, pid: frontmostPID) {
+        if !Self.forcePasteboardFallbackForTesting,
+           await Task.detached(priority: .userInitiated, operation: { Self.replaceSelectionViaAccessibility(newText: newText, pid: frontmostPID) }).value {
             return true
         }
 
@@ -123,15 +126,6 @@ public final class TextCaptureService: Sendable {
 
         let expectedChangeCount = pasteboard.changeCount
 
-        guard !Task.isCancelled else { return false }
-
-        // Post simulated ⌘+V
-        if !Self.skipSimulatePasteForTesting {
-            await simulatePaste()
-        }
-
-        guard !Task.isCancelled else { return false }
-
         // Asynchronously restore pasteboard in background to eliminate blocking latency
         let delay = Self.pasteboardRestoreDelayForTesting ?? 1_000_000_000
         currentRestoreTask?.cancel()
@@ -145,10 +139,19 @@ public final class TextCaptureService: Sendable {
             self.currentRestoreTask = nil
         }
 
+        guard !Task.isCancelled else { return false }
+
+        // Post simulated ⌘+V
+        if !Self.skipSimulatePasteForTesting {
+            await simulatePaste()
+        }
+
+        guard !Task.isCancelled else { return false }
+
         return true
     }
 
-    private func replaceSelectionViaAccessibility(newText: String, pid: pid_t? = nil) -> Bool {
+    nonisolated private static func replaceSelectionViaAccessibility(newText: String, pid: pid_t? = nil) -> Bool {
         let focusedAppElement: AXUIElement
         if let pid = pid {
             focusedAppElement = AXUIElementCreateApplication(pid)
@@ -190,7 +193,20 @@ public final class TextCaptureService: Sendable {
 
     // MARK: - Accessibility Helpers
 
-    private func getSelectionViaAccessibility(pid: pid_t? = nil) -> (String, CGRect?)? {
+    private func getSelectionViaAccessibility(pid: pid_t? = nil) async -> (String, CGRect?)? {
+        // AX IPC can block up to its messaging timeout per call; keep it off the main thread.
+        guard let (text, axRect) = await Task.detached(priority: .userInitiated, operation: { Self.readSelectionViaAccessibility(pid: pid) }).value else {
+            return nil
+        }
+        guard let axRect,
+              let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
+              primaryScreen.frame.height > 0 else {
+            return (text, nil)
+        }
+        return (text, Self.convertCarbonAXRectToCocoa(axRect, primaryScreenHeight: primaryScreen.frame.height))
+    }
+
+    nonisolated private static func readSelectionViaAccessibility(pid: pid_t? = nil) -> (String, CGRect?)? {
         let focusedAppElement: AXUIElement
         if let pid = pid {
             focusedAppElement = AXUIElementCreateApplication(pid)
@@ -236,13 +252,7 @@ public final class TextCaptureService: Sendable {
                CFGetTypeID(val) == AXValueGetTypeID() {
                 var rect = CGRect.zero
                 if AXValueGetValue(val as! AXValue, .cgRect, &rect), rect.width > 1, rect.height > 1 {
-                    // Convert Carbon/AX coordinates (origin at top-left) to Cocoa coordinates (origin at bottom-left)
-                    guard let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
-                          primaryScreen.frame.height > 0 else {
-                        return (text, nil)
-                    }
-                    let primaryScreenHeight = primaryScreen.frame.height
-                    bounds = Self.convertCarbonAXRectToCocoa(rect, primaryScreenHeight: primaryScreenHeight)
+                    bounds = rect
                 }
             }
         }

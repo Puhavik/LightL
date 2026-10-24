@@ -444,7 +444,7 @@ struct AIModelTab: View {
 
     private func saveApiKey() {
         let trimmed = apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty || !settings.geminiApiKey.isEmpty {
+        if trimmed != settings.geminiApiKey {
             settings.geminiApiKey = trimmed
         }
         testResult = nil

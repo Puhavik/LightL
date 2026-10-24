@@ -53,5 +53,6 @@ struct StripTagTests {
         #expect(GeminiService.stripInputTag("Hello\n</input-3af", tag: tag) == "Hello")
         #expect(GeminiService.stripInputTag("a < b and c", tag: tag) == "a < b and c")
         #expect(GeminiService.stripInputTag("Hello", tag: tag) == "Hello")
+        #expect(GeminiService.stripInputTag("if a <", tag: tag, isFinal: true) == "if a <")
     }
 }
