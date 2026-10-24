@@ -1,4 +1,5 @@
 import Testing
+import SwiftUI
 import Foundation
 import Carbon
 import AppKit
@@ -1304,6 +1305,38 @@ struct LightLTests {
         defer { TextCaptureService.accessibilityOverrideForTesting = nil }
         let selection = CapturedSelection(text: "let x = 1\n", bounds: nil, mouseLocation: .zero, isAmbiguousLineCopy: true)
         #expect(await TextCaptureService.shared.replaceSelection(with: "let y = 2", verifying: selection) == false)
+    }
+
+    @Test("Ambiguous rewrite needs a second press within the window")
+    func ambiguousRewriteGate() {
+        var gate = AmbiguousRewriteGate()
+        let first = gate.confirm(text: "line\n", at: 100)
+        let second = gate.confirm(text: "line\n", at: 102)
+        let third = gate.confirm(text: "line\n", at: 103)
+        let other = gate.confirm(text: "other\n", at: 104)
+        let late = gate.confirm(text: "other\n", at: 110)
+        #expect(!first)
+        #expect(second)
+        #expect(!third)
+        #expect(!other)
+        #expect(!late)
+    }
+
+    @Test("Confirming a line copy clears the ambiguity flag")
+    func confirmingLineCopy() {
+        let selection = CapturedSelection(text: "x\n", bounds: nil, mouseLocation: .zero, isAmbiguousLineCopy: true)
+        #expect(selection.isAmbiguousLineCopy)
+        #expect(!selection.confirmingLineCopy().isAmbiguousLineCopy)
+    }
+
+    @Test("FloatingTranslationPanel passes canReplace to the content view")
+    @MainActor
+    func panelCanReplace() {
+        let panel = FloatingTranslationPanel()
+        panel.canReplace = false
+        panel.updateTranslation(originalText: "a", translatedText: "b", targetLanguage: LanguageModel.defaultTarget, onCopy: {}, onReplace: {})
+        let view = (panel.contentView as? NSHostingView<TranslationContentView>)?.rootView
+        #expect(view?.canReplace == false)
     }
 
     @Test("Line-copy heuristic applies only to editors known to copy the caret line")

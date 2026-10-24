@@ -15,6 +15,20 @@ final class StreamGate {
     }
 }
 
+struct AmbiguousRewriteGate {
+    static let window: TimeInterval = 5
+    private var pending: (text: String, at: TimeInterval)?
+
+    mutating func confirm(text: String, at now: TimeInterval) -> Bool {
+        if let pending, pending.text == text, now >= pending.at, now - pending.at < Self.window {
+            self.pending = nil
+            return true
+        }
+        pending = (text, now)
+        return false
+    }
+}
+
 @MainActor
 public final class AppCoordinator {
     public static let shared = AppCoordinator()
@@ -32,6 +46,7 @@ public final class AppCoordinator {
     private var currentRewriteTask: Task<Void, Never>?
     private var currentRewriteTaskId = UUID()
     private var currentReplaceTask: Task<Void, Never>?
+    private var ambiguousRewriteGate = AmbiguousRewriteGate()
     private var settingsObserver: (any NSObjectProtocol)?
 
     private init() {}
@@ -326,8 +341,8 @@ public final class AppCoordinator {
         currentRewriteTask = Task { [weak self] in
             guard let self = self else { return }
 
-            guard let selection = await self.textCapture.captureSelection(),
-                  !selection.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            guard let captured = await self.textCapture.captureSelection(),
+                  !captured.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
                 if !Task.isCancelled && self.currentRewriteTaskId == taskId {
                     self.statusBarController.triggerErrorBlink(
                         message: L10n.tr(ru: "Выделите текст для исправления", en: "Select text to improve")
@@ -338,11 +353,19 @@ public final class AppCoordinator {
 
             guard !Task.isCancelled && self.currentRewriteTaskId == taskId else { return }
 
-            if selection.isAmbiguousLineCopy {
-                self.statusBarController.triggerErrorBlink(
-                    message: L10n.tr(ru: "Выделите текст явно: сейчас скопирована целая строка", en: "Select the text explicitly: the whole line was copied")
-                )
-                return
+            var selection = captured
+            if captured.isAmbiguousLineCopy {
+                if self.ambiguousRewriteGate.confirm(text: captured.text, at: ProcessInfo.processInfo.systemUptime) {
+                    selection = captured.confirmingLineCopy()
+                } else {
+                    self.statusBarController.triggerErrorBlink(
+                        message: L10n.tr(
+                            ru: "Выделена целая строка? Нажмите ещё раз в течение 5 с для подтверждения или выделите текст без переноса строки",
+                            en: "Whole line copied. Press again within 5 s to confirm, or select the text without the line break"
+                        )
+                    )
+                    return
+                }
             }
 
             let originalText = selection.text

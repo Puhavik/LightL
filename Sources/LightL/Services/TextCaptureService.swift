@@ -13,6 +13,10 @@ public struct CapturedSelection: Sendable {
     /// True when the clipboard text looks like an editor's whole-line copy, which may mean nothing was selected.
     public let isAmbiguousLineCopy: Bool
 
+    public func confirmingLineCopy() -> CapturedSelection {
+        CapturedSelection(text: text, bounds: bounds, mouseLocation: mouseLocation, frontmostAppPID: frontmostAppPID, viaAccessibility: viaAccessibility)
+    }
+
     public init(text: String, bounds: CGRect?, mouseLocation: CGPoint, frontmostAppPID: pid_t? = nil, viaAccessibility: Bool = false, isAmbiguousLineCopy: Bool = false) {
         self.viaAccessibility = viaAccessibility
         self.isAmbiguousLineCopy = isAmbiguousLineCopy
