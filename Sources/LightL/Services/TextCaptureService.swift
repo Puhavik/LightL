@@ -74,7 +74,8 @@ public final class TextCaptureService: Sendable {
         }
 
         // 2. Fallback to synthetic Cmd+C
-        if let clipboardText = await getSelectionViaClipboard(), !clipboardText.isEmpty {
+        if let clipboardText = await getSelectionViaClipboard(), !clipboardText.isEmpty,
+           !Self.looksLikeEmptySelectionLineCopy(clipboardText) {
             return CapturedSelection(text: clipboardText, bounds: nil, mouseLocation: mouseLoc, frontmostAppPID: frontmostPID)
         }
 
@@ -128,29 +129,34 @@ public final class TextCaptureService: Sendable {
 
         let expectedChangeCount = pasteboard.changeCount
 
-        // Asynchronously restore pasteboard in background to eliminate blocking latency
-        let delay = Self.pasteboardRestoreDelayForTesting ?? 1_000_000_000
-        currentRestoreTask?.cancel()
-        currentRestoreTask = Task { @MainActor [expectedChangeCount] in
-            try? await Task.sleep(nanoseconds: delay)
-            guard !Task.isCancelled else { return }
-            if pasteboard.changeCount == expectedChangeCount, let original = self.savedOriginalItems {
-                self.restorePasteboard(pasteboard, items: original)
+        // Restore the pasteboard in the background, counting the delay from the moment the paste was posted
+        // so slow apps still read the replacement text.
+        let delay = Self.pasteboardRestoreDelayForTesting ?? 2_000_000_000
+        func scheduleRestore() {
+            currentRestoreTask?.cancel()
+            currentRestoreTask = Task { @MainActor [expectedChangeCount] in
+                try? await Task.sleep(nanoseconds: delay)
+                guard !Task.isCancelled else { return }
+                if pasteboard.changeCount == expectedChangeCount, let original = self.savedOriginalItems {
+                    self.restorePasteboard(pasteboard, items: original)
+                }
+                self.savedOriginalItems = nil
+                self.currentRestoreTask = nil
             }
-            self.savedOriginalItems = nil
-            self.currentRestoreTask = nil
         }
 
-        guard !Task.isCancelled else { return false }
+        guard !Task.isCancelled else {
+            scheduleRestore()
+            return false
+        }
 
         // Post simulated ⌘+V
         if !Self.skipSimulatePasteForTesting {
             await simulatePaste()
         }
+        scheduleRestore()
 
-        guard !Task.isCancelled else { return false }
-
-        return true
+        return !Task.isCancelled
     }
 
     nonisolated private static func replaceSelectionViaAccessibility(newText: String, pid: pid_t? = nil) -> Bool {
@@ -260,6 +266,11 @@ public final class TextCaptureService: Sendable {
         }
 
         return (text, bounds)
+    }
+
+    /// Editors such as VS Code and JetBrains copy the whole caret line plus a trailing newline when nothing is selected.
+    nonisolated static func looksLikeEmptySelectionLineCopy(_ text: String) -> Bool {
+        text.hasSuffix("\n") && text.filter { $0 == "\n" }.count == 1
     }
 
     nonisolated public static func convertCarbonAXRectToCocoa(_ rect: CGRect, primaryScreenHeight: CGFloat) -> CGRect {

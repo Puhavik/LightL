@@ -13,6 +13,8 @@ All notable user-facing features, improvements, and fixes for LightL.
 - Unavailable or conflicting shortcuts now blink the menu bar icon and name the shortcut.
 
 ### Fixed
+- Clipboard restore now waits 2 s after the paste is posted, so slow apps no longer paste the old clipboard instead of the replacement.
+- A hotkey with nothing selected no longer captures the whole caret line in editors that copy it (VS Code, JetBrains, Sublime).
 - The menu bar spinner now stays until the translation finishes, including the non-streaming fallback after an interrupted stream.
 - A model is remembered as rejecting `thinkingBudget` only after the retry without it succeeds.
 - Streaming updates are throttled (about 20 per second) and a late chunk can no longer overwrite the final result in the popover.

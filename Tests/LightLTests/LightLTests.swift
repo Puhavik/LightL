@@ -1254,6 +1254,15 @@ struct LightLTests {
         #expect(TruncatedStreamURLProtocol.requestCount == 2)
     }
 
+    @Test("Clipboard capture treats a single line with a trailing newline as an empty selection")
+    func emptySelectionLineCopy() {
+        #expect(TextCaptureService.looksLikeEmptySelectionLineCopy("let x = 1\n"))
+        #expect(TextCaptureService.looksLikeEmptySelectionLineCopy("\n"))
+        #expect(!TextCaptureService.looksLikeEmptySelectionLineCopy("let x = 1"))
+        #expect(!TextCaptureService.looksLikeEmptySelectionLineCopy("a\nb\n"))
+        #expect(!TextCaptureService.looksLikeEmptySelectionLineCopy("a\nb"))
+    }
+
     @Test("StreamGate renders the first chunk, drops chunks within 50ms and nothing after finish")
     @MainActor
     func streamGateThrottle() {
