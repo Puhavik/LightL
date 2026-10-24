@@ -118,6 +118,36 @@ jobs:
           SIGNING_IDENTITY: ${{ secrets.SIGNING_IDENTITY }}
           STRICT_SIGNING: "1"
 
+      - name: Notarize and staple app
+        env:
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APPLE_API_KEY_BASE64" ] || [ -z "$APPLE_API_KEY_ID" ] || [ -z "$APPLE_API_ISSUER_ID" ]; then
+            echo "Notarization secrets missing; refusing to publish a non-notarized release." >&2
+            exit 1
+          fi
+          AUTH_KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$AUTH_KEY_PATH"
+          ditto -c -k --keepParent LightL.app "$RUNNER_TEMP/LightL-app.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/LightL-app.zip" \
+            --key "$AUTH_KEY_PATH" \
+            --key-id "$APPLE_API_KEY_ID" \
+            --issuer "$APPLE_API_ISSUER_ID" \
+            --wait --output-format json | tee "$RUNNER_TEMP/notary-app.json"
+          python3 -c "import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get('status')=='Accepted' else 1)" "$RUNNER_TEMP/notary-app.json"
+          for attempt in 1 2 3 4 5; do
+            if xcrun stapler staple LightL.app && xcrun stapler validate LightL.app; then
+              exit 0
+            fi
+            echo "Stapling attempt ${attempt} failed, retrying in 30s..."
+            sleep 30
+          done
+          echo "Stapling failed after retries." >&2
+          exit 1
+
       - name: Create DMG Installer
         run: ./scripts/create_dmg.sh
         env:

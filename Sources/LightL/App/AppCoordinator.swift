@@ -65,17 +65,7 @@ public final class AppCoordinator {
             NotificationCenter.default.removeObserver(observer)
             settingsObserver = nil
         }
-        let (translateSuccess, rewriteSuccess) = hotKeyManager.updateHotKeys(
-            translateShortcut: settings.translateShortcut,
-            rewriteShortcut: settings.rewriteShortcut,
-            enableDoubleCmdC: false
-        )
-        if !translateSuccess {
-            print("[LightL] Failed to register translate shortcut on stop: \(settings.translateShortcut.displayString)")
-        }
-        if !rewriteSuccess {
-            print("[LightL] Failed to register rewrite shortcut on stop: \(settings.rewriteShortcut.displayString)")
-        }
+        hotKeyManager.unregisterHotKeys()
         statusBarController?.destroy()
     }
 
@@ -94,6 +84,7 @@ public final class AppCoordinator {
     private func applyCurrentHotKeys() {
         let state = (settings.translateShortcut, settings.rewriteShortcut, settings.doubleCmdCEnabled)
         if let applied = appliedHotKeyState, applied == state { return }
+        appliedHotKeyState = state
         let (translateSuccess, rewriteSuccess) = hotKeyManager.updateHotKeys(
             translateShortcut: settings.translateShortcut,
             rewriteShortcut: settings.rewriteShortcut,
@@ -105,10 +96,14 @@ public final class AppCoordinator {
         if !rewriteSuccess {
             print("[LightL] Failed to register rewrite shortcut: \(settings.rewriteShortcut.displayString)")
         }
-        appliedHotKeyState = (translateSuccess && rewriteSuccess) ? state : nil
-        if !translateSuccess || !rewriteSuccess {
+        let failed = [
+            translateSuccess ? nil : settings.translateShortcut.displayString,
+            rewriteSuccess ? nil : settings.rewriteShortcut.displayString
+        ].compactMap { $0 }
+        if !failed.isEmpty {
+            let list = failed.joined(separator: ", ")
             statusBarController?.triggerErrorBlink(
-                message: L10n.tr(ru: "Сочетание клавиш недоступно или занято", en: "Shortcut is unavailable or already in use")
+                message: L10n.tr(ru: "Сочетание недоступно или занято: \(list)", en: "Shortcut unavailable or already in use: \(list)")
             )
         }
     }

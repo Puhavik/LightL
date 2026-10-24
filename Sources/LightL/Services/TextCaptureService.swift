@@ -92,10 +92,12 @@ public final class TextCaptureService: Sendable {
         }
 
         if let original {
-            let current = original.viaAccessibility
-                ? await getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0
-                : await getSelectionViaClipboard()
-            if current != original.text { return false }
+            if original.viaAccessibility {
+                let current = await getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0
+                if current != original.text { return false }
+            } else if let current = await getSelectionViaClipboard(), current != original.text {
+                return false
+            }
         }
 
         // 1. Try direct Accessibility API replacement (0ms, zero clipboard touch, preserves native Undo)

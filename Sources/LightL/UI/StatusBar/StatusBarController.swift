@@ -14,10 +14,10 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
     public static var appVersion: String {
         let raw = (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String)
             ?? (Bundle.main.infoDictionary?["CFBundleVersion"] as? String)
-            ?? "1.1.0"
+            ?? "dev"
         let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty { return "v1.1.0" }
-        return trimmed.hasPrefix("v") ? trimmed : "v\(trimmed)"
+        if trimmed.isEmpty { return "dev" }
+        return (trimmed == "dev" || trimmed.hasPrefix("v")) ? trimmed : "v\(trimmed)"
     }
 
     public static let defaultMenuBarIcon: NSImage = {

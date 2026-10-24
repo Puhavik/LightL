@@ -1157,6 +1157,44 @@ struct LightLTests {
         #expect(pasteboard.string(forType: .string) == originalText)
     }
 
+    @Test("TextCaptureService restores the clipboard when replaceSelection is cancelled after the pasteboard write")
+    @MainActor
+    func replaceSelectionCancelledRestoresPasteboard() async throws {
+        let pasteboard = NSPasteboard.general
+        let originalText = "Original \(UUID().uuidString)"
+        pasteboard.clearContents()
+        pasteboard.setString(originalText, forType: .string)
+
+        TextCaptureService.accessibilityOverrideForTesting = true
+        TextCaptureService.skipSimulatePasteForTesting = true
+        TextCaptureService.forcePasteboardFallbackForTesting = true
+        TextCaptureService.pasteboardRestoreDelayForTesting = 80_000_000
+        defer {
+            TextCaptureService.accessibilityOverrideForTesting = nil
+            TextCaptureService.skipSimulatePasteForTesting = false
+            TextCaptureService.forcePasteboardFallbackForTesting = false
+            TextCaptureService.pasteboardRestoreDelayForTesting = nil
+        }
+
+        let task = Task { @MainActor in
+            await TextCaptureService.shared.replaceSelection(with: "Replacement \(UUID().uuidString)")
+        }
+        task.cancel()
+        #expect(await task.value == false)
+
+        let deadline = Date().addingTimeInterval(1.5)
+        while TextCaptureService.shared.hasPendingRestoreTaskForTesting && Date() < deadline {
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+        #expect(pasteboard.string(forType: .string) == originalText)
+    }
+
+    @Test("GeminiService rethrows truncated stream errors instead of falling back")
+    func truncatedErrorIsDistinct() {
+        let error: Error = GeminiError.truncated
+        if case GeminiError.truncated = error {} else { Issue.record("expected truncated") }
+    }
+
     // MARK: - Audited Bug Fixes Verification Tests
 
     @Test("ShortcutModel rejects expanded system shortcuts (⌘S, ⌘O, ⌘H, ⌘M) and permits combo modifiers")

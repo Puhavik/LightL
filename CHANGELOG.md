@@ -6,6 +6,18 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ## [Unreleased]
 
+### Changed
+- **Double-tap ⌘C is now off by default** (it sends the selection to Google Gemini); enable it in Settings → Translation.
+- Translations cut off at the length limit now fail with a clear message instead of showing partial text that could be pasted over the original.
+- Replacing text re-checks that the selection is unchanged, also for apps that are read through the clipboard.
+- Unavailable or conflicting shortcuts now blink the menu bar icon and name the shortcut.
+
+### Fixed
+- Clipboard is restored even when a replacement is cancelled.
+- Accessibility queries no longer run on the main thread.
+- Models that reject `thinkingBudget` are remembered, so the extra failed request happens once.
+- Only one shortcut recorder records at a time; quitting releases the global hotkeys.
+
 ### Added
 - **Launch at Login**: menu bar item and Settings toggle (checkbox at the bottom of the Settings sidebar). Off by default; managed through System Settings → Login Items.
 
@@ -28,7 +40,7 @@ Changes since 1.1.0 (versions 1.2.0 and 1.2.1 were withdrawn because the app cra
 - Translation and proofreading results no longer show internal delimiter tags at the start and end of the text.
 
 ### Changed
-- API key is saved on Enter, Save or when Settings closes (not on every keystroke); the key is stored only after a successful connection test; hotkeys are re-registered only when shortcuts change.
+- API key is saved on Enter, Save or when Settings closes (not on every keystroke); hotkeys are re-registered only when shortcuts change.
 - Version and build number: bundle version comes from the release tag, build number is the commit count.
 - Documentation: README privacy section, corrected notes on Gatekeeper and the double-tap monitor.
 

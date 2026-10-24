@@ -84,6 +84,11 @@ public final class HotKeyManager {
         return (translateSuccess, rewriteSuccess)
     }
 
+    public func unregisterHotKeys() {
+        unregisterAll()
+        setupDoubleCmdCMonitor(enabled: false)
+    }
+
     private func registerTranslate(shortcut: ShortcutModel) -> Bool {
         let hotKeyID = EventHotKeyID(signature: OSType(0x4C54_5231), id: 1) // "LTR1"
         let status = RegisterEventHotKey(

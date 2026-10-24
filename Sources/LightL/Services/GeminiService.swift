@@ -69,6 +69,7 @@ public actor GeminiService {
     public static let maxInputCharacters = 12_000
 
     private let session: URLSession
+    private var modelsRejectingThinking: Set<String> = []
 
     private init() {
         let config = URLSessionConfiguration.ephemeral
@@ -204,6 +205,11 @@ public actor GeminiService {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    private static func modelKey(_ url: URL) -> String {
+        let last = url.lastPathComponent
+        return last.split(separator: ":").first.map(String.init) ?? last
+    }
+
     internal static func sanitizeApiKey(_ apiKey: String) -> String {
         apiKey.filter { !$0.isNewline && !$0.isWhitespace }
     }
@@ -241,10 +247,12 @@ public actor GeminiService {
             "maxOutputTokens": maxTokens
         ]
 
-        // Eliminate thinking latency; models that reject it are retried without thinkingConfig on a 400
-        generationConfig["thinkingConfig"] = [
-            "thinkingBudget": 0
-        ]
+        // Eliminate thinking latency; models that reject it are remembered and retried without thinkingConfig
+        if !modelsRejectingThinking.contains(cleanModel) {
+            generationConfig["thinkingConfig"] = [
+                "thinkingBudget": 0
+            ]
+        }
 
         if let onChunk = onChunk {
             do {
@@ -401,7 +409,8 @@ public actor GeminiService {
             // Retry on 400 only if error response text contains "thinking" or "thinkingConfig"
             if httpResponse.statusCode == 400 && canRetryWithoutThinking {
                 let lowerError = errorBody.lowercased()
-                if lowerError.contains("thinking") || lowerError.contains("thinkingconfig") {
+                if lowerError.contains("thinking") || lowerError.contains("budget") {
+                    modelsRejectingThinking.insert(Self.modelKey(url))
                     var fallbackConfig = generationConfig
                     fallbackConfig.removeValue(forKey: "thinkingConfig")
                     return try await executeStreamGenerate(
@@ -481,7 +490,8 @@ public actor GeminiService {
             // Retry on 400 only if error response text contains "thinking" or "thinkingConfig"
             if httpResponse.statusCode == 400 && canRetryWithoutThinking {
                 let lowerError = errorBody.lowercased()
-                if lowerError.contains("thinking") || lowerError.contains("thinkingconfig") {
+                if lowerError.contains("thinking") || lowerError.contains("budget") {
+                    modelsRejectingThinking.insert(Self.modelKey(url))
                     var fallbackConfig = generationConfig
                     fallbackConfig.removeValue(forKey: "thinkingConfig")
                     return try await executeGenerate(

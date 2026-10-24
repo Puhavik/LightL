@@ -6,9 +6,17 @@ import AppKit
 final class ShortcutRecorderController {
     var isRecording = false
     private var localMonitor: Any?
+    private var cancelHandler: (() -> Void)?
+    private static weak var active: ShortcutRecorderController?
 
     func startRecording(onCaptured: @escaping (ShortcutModel) -> Void, onCancelled: @escaping () -> Void) {
         stopRecording()
+        if let other = Self.active, other !== self, other.isRecording {
+            other.stopRecording()
+            other.cancelHandler?()
+        }
+        Self.active = self
+        cancelHandler = onCancelled
         self.isRecording = true
 
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
