@@ -89,40 +89,36 @@ public final class HotKeyManager {
         setupDoubleCmdCMonitor(enabled: false)
     }
 
-    private func registerTranslate(shortcut: ShortcutModel) -> Bool {
-        let hotKeyID = EventHotKeyID(signature: OSType(0x4C54_5231), id: 1) // "LTR1"
+    private func registerHotKey(
+        _ shortcut: ShortcutModel,
+        name: String,
+        signature: UInt32,
+        id: UInt32,
+        ref: inout EventHotKeyRef?
+    ) -> Bool {
+        let hotKeyID = EventHotKeyID(signature: OSType(signature), id: id)
         let status = RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.modifiers,
             hotKeyID,
             GetApplicationEventTarget(),
             0,
-            &translateHotKeyRef
+            &ref
         )
         if status == -9878 /* eventHotKeyExistsErr */ {
-            print("[HotKeyManager] Warning: translate hotkey already registered by another application (eventHotKeyExistsErr -9878), keyCode: \(shortcut.keyCode)")
+            print("[HotKeyManager] Warning: \(name) hotkey already registered by another application (eventHotKeyExistsErr -9878), keyCode: \(shortcut.keyCode)")
         } else if status != noErr {
-            print("[HotKeyManager] Failed to register translate hotkey: \(status), keyCode: \(shortcut.keyCode)")
+            print("[HotKeyManager] Failed to register \(name) hotkey: \(status), keyCode: \(shortcut.keyCode)")
         }
         return status == noErr
     }
 
+    private func registerTranslate(shortcut: ShortcutModel) -> Bool {
+        registerHotKey(shortcut, name: "translate", signature: 0x4C54_5231, id: 1, ref: &translateHotKeyRef) // "LTR1"
+    }
+
     private func registerRewrite(shortcut: ShortcutModel) -> Bool {
-        let hotKeyID = EventHotKeyID(signature: OSType(0x4C54_5232), id: 2) // "LTR2"
-        let status = RegisterEventHotKey(
-            shortcut.keyCode,
-            shortcut.modifiers,
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &rewriteHotKeyRef
-        )
-        if status == -9878 /* eventHotKeyExistsErr */ {
-            print("[HotKeyManager] Warning: rewrite hotkey already registered by another application (eventHotKeyExistsErr -9878), keyCode: \(shortcut.keyCode)")
-        } else if status != noErr {
-            print("[HotKeyManager] Failed to register rewrite hotkey: \(status), keyCode: \(shortcut.keyCode)")
-        }
-        return status == noErr
+        registerHotKey(shortcut, name: "rewrite", signature: 0x4C54_5232, id: 2, ref: &rewriteHotKeyRef) // "LTR2"
     }
 
     private func unregisterAll() {

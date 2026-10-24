@@ -39,21 +39,6 @@ public enum RewriteMode: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
-    public var description: String {
-        switch self {
-        case .proofread:
-            return L10n.tr(
-                ru: "Исправляет орфографию, грамматику и пунктуацию. Слова, тон и структура предложений остаются без изменений.",
-                en: "Corrects spelling, grammar, and punctuation. Words, tone, and sentence structure remain strictly unchanged."
-            )
-        case .improveStyle:
-            return L10n.tr(
-                ru: "Перефразирует текст, устраняет косноязычие и канцелярит, делая формулировки ясными и убедительными.",
-                en: "Rephrases sentences to eliminate clunkiness, enhancing flow, vocabulary, and professional impact."
-            )
-        }
-    }
-
     public var wordingBehavior: String {
         switch self {
         case .proofread:

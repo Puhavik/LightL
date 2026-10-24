@@ -95,11 +95,7 @@ struct PermissionsTab: View {
             isAxGranted = TextCaptureService.isAccessibilityGranted()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            let granted = TextCaptureService.isAccessibilityGranted()
-            isAxGranted = granted
-            if granted {
-                HotKeyManager.shared.recheckDoubleCmdCMonitor()
-            }
+            isAxGranted = TextCaptureService.isAccessibilityGranted()
         }
     }
 

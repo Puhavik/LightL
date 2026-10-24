@@ -174,62 +174,7 @@ public final class TextCaptureService: Sendable {
         return !Task.isCancelled
     }
 
-    nonisolated private static func replaceSelectionViaAccessibility(newText: String, pid: pid_t? = nil) -> Bool {
-        let focusedAppElement: AXUIElement
-        if let pid = pid {
-            focusedAppElement = AXUIElementCreateApplication(pid)
-        } else {
-            let systemWide = AXUIElementCreateSystemWide()
-            AXUIElementSetMessagingTimeout(systemWide, 0.25)
-            var focusedAppValue: AnyObject?
-            let appError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedApplicationAttribute as CFString, &focusedAppValue)
-            guard appError == .success,
-                  let focusedApp = focusedAppValue,
-                  CFGetTypeID(focusedApp) == AXUIElementGetTypeID() else {
-                return false
-            }
-            focusedAppElement = focusedApp as! AXUIElement
-        }
-
-        AXUIElementSetMessagingTimeout(focusedAppElement, 0.25)
-
-        var focusedElementValue: AnyObject?
-        let elError = AXUIElementCopyAttributeValue(focusedAppElement, kAXFocusedUIElementAttribute as CFString, &focusedElementValue)
-        guard elError == .success,
-              let focusedElement = focusedElementValue,
-              CFGetTypeID(focusedElement) == AXUIElementGetTypeID() else {
-            return false
-        }
-
-        let element = focusedElement as! AXUIElement
-        AXUIElementSetMessagingTimeout(element, 0.25)
-
-        var isSettable: DarwinBoolean = false
-        let settableStatus = AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &isSettable)
-        guard settableStatus == .success, isSettable.boolValue else {
-            return false
-        }
-
-        let setStatus = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, newText as CFTypeRef)
-        return setStatus == .success
-    }
-
-    // MARK: - Accessibility Helpers
-
-    private func getSelectionViaAccessibility(pid: pid_t? = nil) async -> (String, CGRect?)? {
-        // AX IPC can block up to its messaging timeout per call; keep it off the main thread.
-        guard let (text, axRect) = await Task.detached(priority: .userInitiated, operation: { Self.readSelectionViaAccessibility(pid: pid) }).value else {
-            return nil
-        }
-        guard let axRect,
-              let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
-              primaryScreen.frame.height > 0 else {
-            return (text, nil)
-        }
-        return (text, Self.convertCarbonAXRectToCocoa(axRect, primaryScreenHeight: primaryScreen.frame.height))
-    }
-
-    nonisolated private static func readSelectionViaAccessibility(pid: pid_t? = nil) -> (String, CGRect?)? {
+    nonisolated private static func focusedElement(pid: pid_t?) -> AXUIElement? {
         let focusedAppElement: AXUIElement
         if let pid = pid {
             focusedAppElement = AXUIElementCreateApplication(pid)
@@ -258,6 +203,43 @@ public final class TextCaptureService: Sendable {
 
         let element = focusedElement as! AXUIElement
         AXUIElementSetMessagingTimeout(element, 0.25)
+        return element
+    }
+
+    nonisolated private static func replaceSelectionViaAccessibility(newText: String, pid: pid_t? = nil) -> Bool {
+        guard let element = Self.focusedElement(pid: pid) else {
+            return false
+        }
+
+        var isSettable: DarwinBoolean = false
+        let settableStatus = AXUIElementIsAttributeSettable(element, kAXSelectedTextAttribute as CFString, &isSettable)
+        guard settableStatus == .success, isSettable.boolValue else {
+            return false
+        }
+
+        let setStatus = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, newText as CFTypeRef)
+        return setStatus == .success
+    }
+
+    // MARK: - Accessibility Helpers
+
+    private func getSelectionViaAccessibility(pid: pid_t? = nil) async -> (String, CGRect?)? {
+        // AX IPC can block up to its messaging timeout per call; keep it off the main thread.
+        guard let (text, axRect) = await Task.detached(priority: .userInitiated, operation: { Self.readSelectionViaAccessibility(pid: pid) }).value else {
+            return nil
+        }
+        guard let axRect,
+              let primaryScreen = NSScreen.screens.first(where: { $0.frame.origin == .zero }) ?? NSScreen.screens.first,
+              primaryScreen.frame.height > 0 else {
+            return (text, nil)
+        }
+        return (text, Self.convertCarbonAXRectToCocoa(axRect, primaryScreenHeight: primaryScreen.frame.height))
+    }
+
+    nonisolated private static func readSelectionViaAccessibility(pid: pid_t? = nil) -> (String, CGRect?)? {
+        guard let element = Self.focusedElement(pid: pid) else {
+            return nil
+        }
 
         var selectedTextValue: AnyObject?
         let textError = AXUIElementCopyAttributeValue(element, kAXSelectedTextAttribute as CFString, &selectedTextValue)
@@ -390,22 +372,17 @@ public final class TextCaptureService: Sendable {
     // MARK: - Pasteboard Backup / Restore
 
     internal func backupPasteboard(_ pasteboard: NSPasteboard) -> [NSPasteboardItem] {
-        guard let items = pasteboard.pasteboardItems else { return [] }
-        return items.map { item in
-            let newItem = NSPasteboardItem()
-            for type in item.types {
-                if let data = item.data(forType: type) {
-                    newItem.setData(data, forType: type)
-                }
-            }
-            return newItem
-        }
+        Self.cloneItems(pasteboard.pasteboardItems ?? [])
     }
 
     internal func restorePasteboard(_ pasteboard: NSPasteboard, items: [NSPasteboardItem]) {
         pasteboard.clearContents()
         guard !items.isEmpty else { return }
-        let freshItems = items.map { item in
+        pasteboard.writeObjects(Self.cloneItems(items))
+    }
+
+    nonisolated private static func cloneItems(_ items: [NSPasteboardItem]) -> [NSPasteboardItem] {
+        items.map { item in
             let newItem = NSPasteboardItem()
             for type in item.types {
                 if let data = item.data(forType: type) {
@@ -414,6 +391,5 @@ public final class TextCaptureService: Sendable {
             }
             return newItem
         }
-        pasteboard.writeObjects(freshItems)
     }
 }

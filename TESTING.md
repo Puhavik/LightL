@@ -6,13 +6,13 @@ Run everything with `swift test`. Scripts are checked in CI with `shellcheck scr
 
 | Area | Where | How |
 |---|---|---|
-| Gemini transport, SSE, retries, truncation, blocked responses | `LightLTests`, `GeminiServiceEdgeTests` | `URLProtocol` stub (`TruncatedStreamURLProtocol`) with a response queue and request capture |
+| Gemini transport, SSE, retries, truncation, blocked responses | `GeminiStreamTests`, `GeminiServiceEdgeTests`, `GeminiParsingTests` | `URLProtocol` stub (`TruncatedStreamURLProtocol`) with a response queue and request capture |
 | `AppCoordinator` flows (translate, rewrite, cancellation, ambiguous line capture) | `AppCoordinatorTests` | fakes behind `TextCapturing`, `TextTransforming`, `StatusIndicating`, `TranslationPresenting` |
 | Settings migration (double-tap default, legacy key) | `AppSettingsMigrationTests` | isolated `UserDefaults` suite plus the in-memory Keychain |
-| Clipboard backup/restore, pending-restore window | `LightLTests` | testing hooks on `TextCaptureService` |
+| Clipboard capture, backup/restore, pending-restore window, line-copy heuristic | `TextCaptureTests` | testing hooks on `TextCaptureService` |
 | Release script behavior | `scripts/test_notarize.sh` | stubbed `xcrun` |
 
-Suites that touch the shared stub or the in-memory Keychain are serialized. Real `CGEvent` posting and Accessibility queries are not automated.
+The tests of the shared `LightLTests` suite live in several files (`ShortcutAndHotKeyTests`, `SettingsAndStorageTests`, `UIComponentTests`, ...) as extensions of it. Suites that touch the shared stub or the in-memory Keychain are serialized. Real `CGEvent` posting and Accessibility queries are not automated.
 
 ## Manual checklist before a release
 
