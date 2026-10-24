@@ -1,18 +1,14 @@
 import AppKit
 import ServiceManagement
 
-/// Launch-at-login via SMAppService. The system (System Settings → Login Items) is the single
-/// source of truth: nothing is persisted in-app and the app never registers itself, so default is off.
 @MainActor
 public enum LaunchAtLogin {
     public static var status: SMAppService.Status { SMAppService.mainApp.status }
 
     public static var isEnabled: Bool { status == .enabled }
 
-    /// Registered, but the user still has to approve it in System Settings.
     public static var needsApproval: Bool { status == .requiresApproval }
 
-    /// What the toggle should show: on, or waiting for the user's approval.
     public static var isRequested: Bool { isEnabled || needsApproval }
 
     public static func setEnabled(_ enabled: Bool) {

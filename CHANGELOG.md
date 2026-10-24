@@ -7,7 +7,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 ## [Unreleased]
 
 ### Added
-- **Launch at Login**: menu bar item and Settings toggle (Settings → General). Off by default; managed through System Settings → Login Items.
+- **Launch at Login**: menu bar item and Settings toggle (checkbox at the bottom of the Settings sidebar). Off by default; managed through System Settings → Login Items.
 
 ## [1.2.2] - 2026-10-23
 

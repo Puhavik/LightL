@@ -4,7 +4,6 @@ import AppKit
 // MARK: - Tab Enum
 
 enum SettingsTab: String, CaseIterable, Identifiable {
-    case general = "general"
     case aiModel = "ai_model"
     case translation = "translation"
     case rewrite = "rewrite"
@@ -15,7 +14,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
-        case .general: return L10n.tr(ru: "Основные", en: "General")
         case .aiModel: return L10n.tr(ru: "ИИ и Модель", en: "AI & Model")
         case .translation: return L10n.tr(ru: "Перевод", en: "Translation")
         case .rewrite: return L10n.tr(ru: "Исправление", en: "Correction")
@@ -26,7 +24,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
-        case .general: return "gearshape.fill"
         case .aiModel: return "sparkles"
         case .translation: return "character.book.closed.fill"
         case .rewrite: return "text.badge.checkmark"
@@ -37,8 +34,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var iconGradient: [Color] {
         switch self {
-        case .general:
-            return [Color(red: 0.55, green: 0.57, blue: 0.62), Color(red: 0.38, green: 0.40, blue: 0.45)]
         case .aiModel:
             return [Color(red: 0.62, green: 0.38, blue: 0.98), Color(red: 0.44, green: 0.22, blue: 0.88)]
         case .translation:
@@ -169,6 +164,9 @@ public struct SettingsView: View {
 
             Spacer()
 
+            LaunchAtLoginToggle()
+                .padding(.horizontal, 14)
+
             // Quick Status Footer
             HStack(spacing: 6) {
                 Circle()
@@ -206,8 +204,6 @@ public struct SettingsView: View {
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 16) {
                     switch selectedTab {
-                    case .general:
-                        GeneralTab()
                     case .aiModel:
                         AIModelTab()
                     case .translation:
@@ -913,31 +909,24 @@ struct PermissionsTab: View {
 
 // MARK: - Tab 5: Appearance Content (macOS 27 HIG Standards)
 
-struct GeneralTab: View {
+struct LaunchAtLoginToggle: View {
     @State private var launchAtLogin = LaunchAtLogin.isRequested
 
     var body: some View {
-        VStack(spacing: 14) {
-            VStack(alignment: .leading, spacing: 8) {
-                Toggle(L10n.tr(ru: "Запускать при входе в систему", en: "Launch at Login"), isOn: $launchAtLogin)
-                    .font(.system(size: 13, weight: .semibold))
-                    .onChange(of: launchAtLogin) { _, on in
-                        LaunchAtLogin.setEnabled(on)
-                        launchAtLogin = LaunchAtLogin.isRequested
-                    }
-                Text(LaunchAtLogin.needsApproval
-                    ? L10n.tr(ru: "Подтвердите в Системных настройках → Основные → Объекты входа.", en: "Approve in System Settings → General → Login Items.")
-                    : L10n.tr(ru: "По умолчанию выключено. Управлять также можно в Системных настройках → Объекты входа.", en: "Off by default. Also manageable in System Settings → Login Items."))
-                    .font(.system(size: 11.5))
-                    .foregroundColor(.secondary)
+        Toggle(L10n.tr(ru: "Запускать при входе", en: "Launch at Login"), isOn: $launchAtLogin)
+            .toggleStyle(.checkbox)
+            .font(.system(size: 11))
+            .help(LaunchAtLogin.needsApproval
+                ? L10n.tr(ru: "Подтвердите в Системных настройках → Основные → Объекты входа.", en: "Approve in System Settings → General → Login Items.")
+                : L10n.tr(ru: "По умолчанию выключено. Также доступно в Системных настройках → Объекты входа.", en: "Off by default. Also manageable in System Settings → Login Items."))
+            .onChange(of: launchAtLogin) { _, on in
+                LaunchAtLogin.setEnabled(on)
+                launchAtLogin = LaunchAtLogin.isRequested
             }
-            .padding(16)
-            .macos27ContentCard(cornerRadius: 12)
             .onAppear { launchAtLogin = LaunchAtLogin.isRequested }
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 launchAtLogin = LaunchAtLogin.isRequested
             }
-        }
     }
 }
 
