@@ -243,6 +243,18 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
+        let loginItem = NSMenuItem(
+            title: L10n.tr(ru: "Запускать при входе в систему", en: "Launch at Login"),
+            action: #selector(toggleLaunchAtLoginAction),
+            keyEquivalent: ""
+        )
+        loginItem.target = self
+        loginItem.state = LaunchAtLogin.isEnabled ? .on : (LaunchAtLogin.needsApproval ? .mixed : .off)
+        if LaunchAtLogin.needsApproval {
+            loginItem.toolTip = L10n.tr(ru: "Требуется подтверждение в Системных настройках → Объекты входа", en: "Needs approval in System Settings → Login Items")
+        }
+        menu.addItem(loginItem)
+
         menu.addItem(NSMenuItem.separator())
 
         // Quit
@@ -334,6 +346,14 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
 
     @objc private func menuOpenSettings() {
         onOpenSettings?()
+    }
+
+    @objc private func toggleLaunchAtLoginAction() {
+        if LaunchAtLogin.needsApproval {
+            LaunchAtLogin.openSystemSettings()
+        } else {
+            LaunchAtLogin.setEnabled(!LaunchAtLogin.isEnabled)
+        }
     }
 
     @objc private func changeLanguageAction(_ sender: NSMenuItem) {

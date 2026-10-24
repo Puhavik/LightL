@@ -4,6 +4,11 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Launch at Login**: menu bar item and Settings toggle (Appearance). Off by default; managed through System Settings → Login Items.
+
 ## [1.2.2] - 2026-10-23
 
 Changes since 1.1.0 (versions 1.2.0 and 1.2.1 were withdrawn because the app crashed on launch when installed from the DMG).

@@ -908,9 +908,30 @@ struct PermissionsTab: View {
 
 struct AppearanceTab: View {
     @Bindable var settings = AppSettings.shared
+    @State private var launchAtLogin = LaunchAtLogin.isRequested
 
     var body: some View {
         VStack(spacing: 14) {
+            VStack(alignment: .leading, spacing: 8) {
+                Toggle(L10n.tr(ru: "Запускать при входе в систему", en: "Launch at Login"), isOn: $launchAtLogin)
+                    .font(.system(size: 13, weight: .semibold))
+                    .onChange(of: launchAtLogin) { _, on in
+                        LaunchAtLogin.setEnabled(on)
+                        launchAtLogin = LaunchAtLogin.isRequested
+                    }
+                Text(LaunchAtLogin.needsApproval
+                    ? L10n.tr(ru: "Подтвердите в Системных настройках → Основные → Объекты входа.", en: "Approve in System Settings → General → Login Items.")
+                    : L10n.tr(ru: "По умолчанию выключено. Управлять также можно в Системных настройках → Объекты входа.", en: "Off by default. Also manageable in System Settings → Login Items."))
+                    .font(.system(size: 11.5))
+                    .foregroundColor(.secondary)
+            }
+            .padding(16)
+            .macos27ContentCard(cornerRadius: 12)
+            .onAppear { launchAtLogin = LaunchAtLogin.isRequested }
+            .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                launchAtLogin = LaunchAtLogin.isRequested
+            }
+
             // Language Selection Card
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
