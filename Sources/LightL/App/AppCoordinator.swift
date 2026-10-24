@@ -2,6 +2,12 @@ import Foundation
 import AppKit
 
 @MainActor
+private final class StreamGate {
+    var finished = false
+    var lastUpdate = Date.distantPast
+}
+
+@MainActor
 public final class AppCoordinator {
     public static let shared = AppCoordinator()
 
@@ -168,6 +174,8 @@ public final class AppCoordinator {
             let apiKey = self.settings.geminiApiKey
             let modelId = self.settings.selectedModelId
             let targetPID = selection.frontmostAppPID
+            let gate = StreamGate()
+            defer { gate.finished = true }
 
             let location: FloatingTranslationPanel.EitherPointOrRect
             if let bounds = selection.bounds {
@@ -195,7 +203,10 @@ public final class AppCoordinator {
                     model: modelId,
                     onChunk: { [weak self] partialText in
                         Task { @MainActor [weak self] in
-                            guard let self = self, self.currentTranslateTaskId == taskId, !Task.isCancelled else { return }
+                            guard let self = self, self.currentTranslateTaskId == taskId, !Task.isCancelled, !gate.finished else { return }
+                            let now = Date()
+                            guard now.timeIntervalSince(gate.lastUpdate) >= 0.05 else { return }
+                            gate.lastUpdate = now
                             self.translationPanel.updateTranslation(
                                 originalText: originalText,
                                 translatedText: partialText,

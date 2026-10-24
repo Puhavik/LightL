@@ -13,6 +13,9 @@ All notable user-facing features, improvements, and fixes for LightL.
 - Unavailable or conflicting shortcuts now blink the menu bar icon and name the shortcut.
 
 ### Fixed
+- The menu bar spinner now stays until the translation finishes, including the non-streaming fallback after an interrupted stream.
+- A model is remembered as rejecting `thinkingBudget` only after the retry without it succeeds.
+- Streaming updates are throttled (about 20 per second) and a late chunk can no longer overwrite the final result in the popover.
 - Streaming translation: events were merged into one invalid payload (blank separator lines are dropped by `URLSession`), so every translation silently fell back to a second non-streaming request.
 - A stream that closes without a finish reason is no longer shown as a complete translation, and blocked responses are no longer re-requested.
 - Clipboard is restored even when a replacement is cancelled.
