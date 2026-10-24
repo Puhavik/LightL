@@ -101,7 +101,7 @@ public final class AppSettings {
     }
 
     private init() {
-        let hasPriorDefaults = defaults.dictionaryRepresentation().keys.contains { $0.hasPrefix("LightL_") }
+        let hasPriorDefaults = defaults.persistentDomain(forName: Bundle.main.bundleIdentifier ?? "")?.keys.contains { $0.hasPrefix("LightL_") } ?? false
         var hasExistingInstall = hasPriorDefaults
         if let key = KeychainHelper.loadApiKey(), !key.isEmpty {
             hasExistingInstall = true

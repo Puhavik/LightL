@@ -849,7 +849,7 @@ struct LightLTests {
             ""
         ]
         var chunks: [String] = []
-        let result1 = try GeminiService.parseSSELines(sseWithSpace) { chunk in
+        let result1 = try GeminiService.parseSSELines(sseWithSpace, requireFinish: false) { chunk in
             chunks.append(chunk)
         }
         #expect(result1 == "Hello")
@@ -860,7 +860,7 @@ struct LightLTests {
             "data:{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"World!\"}]}}]}",
             ""
         ]
-        let result2 = try GeminiService.parseSSELines(sseWithoutSpace)
+        let result2 = try GeminiService.parseSSELines(sseWithoutSpace, requireFinish: false)
         #expect(result2 == "World!")
 
         // 3. Multiline payload chunking across multiple "data:" lines ending with empty line
@@ -879,7 +879,7 @@ struct LightLTests {
             "data: }",
             ""
         ]
-        let result3 = try GeminiService.parseSSELines(multilineSSE)
+        let result3 = try GeminiService.parseSSELines(multilineSSE, requireFinish: false)
         #expect(result3 == "Line1 Line2")
 
         // 4. Multiple distinct events in sequence, with mixed prefixes and trailing flush at EOF without final empty line
@@ -891,7 +891,7 @@ struct LightLTests {
             "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Three\"}]}}]}" // no trailing newline
         ]
         var progressiveChunks: [String] = []
-        let result4 = try GeminiService.parseSSELines(sequenceSSE) { chunk in
+        let result4 = try GeminiService.parseSSELines(sequenceSSE, requireFinish: false) { chunk in
             progressiveChunks.append(chunk)
         }
         #expect(result4 == "One Two Three")
@@ -902,7 +902,7 @@ struct LightLTests {
             "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"CRLF Test\"}]}}]}\r",
             "\r"
         ]
-        let result5 = try GeminiService.parseSSELines(crlfSSE)
+        let result5 = try GeminiService.parseSSELines(crlfSSE, requireFinish: false)
         #expect(result5 == "CRLF Test")
 
         // 6. Comments or non-data lines ignored
@@ -911,7 +911,7 @@ struct LightLTests {
             "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Real Content\"}]}}]}",
             ""
         ]
-        let result6 = try GeminiService.parseSSELines(commentSSE)
+        let result6 = try GeminiService.parseSSELines(commentSSE, requireFinish: false)
         #expect(result6 == "Real Content")
     }
 
@@ -1209,6 +1209,51 @@ struct LightLTests {
         #expect(TruncatedStreamURLProtocol.requestCount == 2)
     }
 
+    @Test("GeminiService remembers a model that rejects thinking only after the retry succeeds")
+    func thinkingRejectionCache() async throws {
+        defer { TruncatedStreamURLProtocol.reset() }
+        TruncatedStreamURLProtocol.reset()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TruncatedStreamURLProtocol.self]
+        let service = GeminiService(session: URLSession(configuration: config))
+        let ok = "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hello\"}]}, \"finishReason\": \"STOP\"}]}\n\n"
+        TruncatedStreamURLProtocol.queuedResponses = [
+            (status: 400, body: "{\"error\": {\"code\": 400, \"message\": \"Thinking budget is not supported\"}}"),
+            (status: 200, body: ok)
+        ]
+        let first = try await service.translate(text: "hi", targetLanguage: LanguageModel.defaultTarget, apiKey: "k", model: "gemini-cache-test", onChunk: { _ in })
+        #expect(first == "Hello")
+        #expect(TruncatedStreamURLProtocol.requestBodies.count == 2)
+        #expect(TruncatedStreamURLProtocol.requestBodies[0].contains("thinkingConfig"))
+        #expect(!TruncatedStreamURLProtocol.requestBodies[1].contains("thinkingConfig"))
+
+        TruncatedStreamURLProtocol.queuedResponses = [(status: 200, body: ok)]
+        _ = try await service.translate(text: "hi", targetLanguage: LanguageModel.defaultTarget, apiKey: "k", model: "gemini-cache-test", onChunk: { _ in })
+        #expect(TruncatedStreamURLProtocol.requestBodies.count == 3)
+        #expect(!TruncatedStreamURLProtocol.requestBodies[2].contains("thinkingConfig"))
+    }
+
+    @Test("GeminiService fallback request after an incomplete stream still rejects truncated output")
+    func fallbackRejectsTruncated() async {
+        defer { TruncatedStreamURLProtocol.reset() }
+        TruncatedStreamURLProtocol.reset()
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TruncatedStreamURLProtocol.self]
+        let service = GeminiService(session: URLSession(configuration: config))
+        TruncatedStreamURLProtocol.queuedResponses = [
+            (status: 200, body: "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hel\"}]}}]}\n\n"),
+            (status: 200, body: "{\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hello\"}]}, \"finishReason\": \"MAX_TOKENS\"}]}")
+        ]
+        var thrown: Error?
+        do {
+            _ = try await service.translate(text: "hi", targetLanguage: LanguageModel.defaultTarget, apiKey: "k", model: "gemini-fallback-test", onChunk: { _ in })
+        } catch {
+            thrown = error
+        }
+        if case GeminiError.truncated? = thrown {} else { Issue.record("expected .truncated, got \(String(describing: thrown))") }
+        #expect(TruncatedStreamURLProtocol.requestCount == 2)
+    }
+
     @Test("GeminiService streams consecutive SSE events in one request")
     func streamAccumulatesConsecutiveEvents() async throws {
         TruncatedStreamURLProtocol.requestCount = 0
@@ -1313,19 +1358,42 @@ struct LightLTests {
 
 final class TruncatedStreamURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requestCount = 0
+    nonisolated(unsafe) static var queuedResponses: [(status: Int, body: String)] = []
+    nonisolated(unsafe) static var requestBodies: [String] = []
     static let truncatedBody = "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"partial\"}]}}]}\n\n"
         + "data: {\"candidates\": [{\"content\": {\"parts\": []}, \"finishReason\": \"MAX_TOKENS\"}]}\n\n"
     nonisolated(unsafe) static var body = truncatedBody
+
+    static func reset() {
+        requestCount = 0
+        queuedResponses = []
+        requestBodies = []
+        body = truncatedBody
+    }
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
     override func startLoading() {
         Self.requestCount += 1
-        let body = Self.body
-        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
+        var bodyData = Data()
+        if let stream = request.httpBodyStream {
+            stream.open()
+            var buffer = [UInt8](repeating: 0, count: 4096)
+            while stream.hasBytesAvailable {
+                let n = stream.read(&buffer, maxLength: buffer.count)
+                if n <= 0 { break }
+                bodyData.append(buffer, count: n)
+            }
+            stream.close()
+        } else if let data = request.httpBody {
+            bodyData = data
+        }
+        Self.requestBodies.append(String(decoding: bodyData, as: UTF8.self))
+        let next = Self.queuedResponses.isEmpty ? (status: 200, body: Self.body) : Self.queuedResponses.removeFirst()
+        let response = HTTPURLResponse(url: request.url!, statusCode: next.status, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocol(self, didLoad: Data(next.body.utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 

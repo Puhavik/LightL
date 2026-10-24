@@ -209,10 +209,9 @@ public actor GeminiService {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    /// Retries a 400 that rejects thinkingConfig without it, and remembers the model so later requests skip the failed attempt.
+    /// Returns the config for retrying a 400 that rejects thinkingConfig; callers remember the model once the retry succeeds.
     private func thinkingFallbackConfig(status: Int, body: String, model: String, config: [String: Any], canRetry: Bool) -> [String: Any]? {
         guard status == 400, canRetry, body.lowercased().contains("thinking") else { return nil }
-        modelsRejectingThinking.insert(model)
         var fallback = config
         fallback.removeValue(forKey: "thinkingConfig")
         return fallback
@@ -425,7 +424,7 @@ public actor GeminiService {
             let errorBody = String(data: errorData, encoding: .utf8) ?? ""
 
             if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, model: model, config: generationConfig, canRetry: canRetryWithoutThinking) {
-                return try await executeStreamGenerate(
+                let result = try await executeStreamGenerate(
                     url: url,
                     model: model,
                     prompt: prompt,
@@ -436,6 +435,8 @@ public actor GeminiService {
                     canRetryWithoutThinking: false,
                     rejectTruncated: rejectTruncated
                 )
+                modelsRejectingThinking.insert(model)
+                return result
             }
 
             var errorMessage = "HTTP \(httpResponse.statusCode)"
@@ -515,7 +516,7 @@ public actor GeminiService {
         if httpResponse.statusCode != 200 {
             let errorBody = String(data: data, encoding: .utf8) ?? ""
             if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, model: model, config: generationConfig, canRetry: canRetryWithoutThinking) {
-                return try await executeGenerate(
+                let result = try await executeGenerate(
                     url: url,
                     model: model,
                     prompt: prompt,
@@ -525,6 +526,8 @@ public actor GeminiService {
                     canRetryWithoutThinking: false,
                     rejectTruncated: rejectTruncated
                 )
+                modelsRejectingThinking.insert(model)
+                return result
             }
 
             var errorMessage = "HTTP \(httpResponse.statusCode)"
@@ -681,6 +684,7 @@ public actor GeminiService {
 
     internal static func parseSSELines<S: Sequence>(
         _ lines: S,
+        requireFinish: Bool = true,
         onChunk: ((String) -> Void)? = nil
     ) throws -> String where S.Element == String {
         var accumulatedText = ""
@@ -691,7 +695,7 @@ public actor GeminiService {
             finishReason = try consumeSSELine(rawLine, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
         }
         finishReason = try flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
-        try validateStreamEnd(finishReason: finishReason, rejectTruncated: true, requireFinish: false)
+        try validateStreamEnd(finishReason: finishReason, rejectTruncated: true, requireFinish: requireFinish)
 
         let trimmedResult = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedResult.isEmpty else {

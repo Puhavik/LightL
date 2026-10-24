@@ -196,7 +196,6 @@ public final class AppCoordinator {
                     onChunk: { [weak self] partialText in
                         Task { @MainActor [weak self] in
                             guard let self = self, self.currentTranslateTaskId == taskId, !Task.isCancelled else { return }
-                            self.statusBarController.setLoading(false)
                             self.translationPanel.updateTranslation(
                                 originalText: originalText,
                                 translatedText: partialText,
