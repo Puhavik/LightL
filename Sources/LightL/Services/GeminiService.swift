@@ -217,6 +217,29 @@ public actor GeminiService {
         return fallback
     }
 
+    private static func isCancellation(_ error: Error) -> Bool {
+        error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled
+    }
+
+    private static func errorMessage(status: Int, body: Data) -> String {
+        (try? JSONDecoder().decode(GeminiErrorResponse.self, from: body))?.error?.message ?? "HTTP \(status)"
+    }
+
+    private static func blockedError(finishReason: String) -> GeminiError {
+        switch finishReason {
+        case "SAFETY":
+            return .decodingError(L10n.tr(ru: "Ответ заблокирован фильтрами безопасности Gemini.", en: "Response blocked by Gemini safety filters."))
+        case "RECITATION":
+            return .decodingError(L10n.tr(ru: "Ответ заблокирован из-за совпадения с источником (RECITATION).", en: "Response blocked due to recitation check."))
+        default:
+            return .decodingError(L10n.tr(ru: "Ответ заблокирован Gemini (причина: \(finishReason)).", en: "Response blocked by Gemini (reason: \(finishReason))."))
+        }
+    }
+
+    private static func blockedRequestError(reason: String) -> GeminiError {
+        .decodingError(L10n.tr(ru: "Запрос заблокирован Gemini (причина: \(reason)).", en: "Request blocked by Gemini (reason: \(reason))."))
+    }
+
     internal static func sanitizeApiKey(_ apiKey: String) -> String {
         apiKey.filter { !$0.isNewline && !$0.isWhitespace }
     }
@@ -279,7 +302,7 @@ public actor GeminiService {
                     return trimmed
                 }
             } catch {
-                if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                if Self.isCancellation(error) {
                     throw CancellationError()
                 }
                 // Client errors (bad key, quota, forbidden) would fail identically without streaming: surface them.
@@ -398,7 +421,7 @@ public actor GeminiService {
         do {
             (asyncBytes, response) = try await session.bytes(for: request)
         } catch {
-            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+            if Self.isCancellation(error) {
                 throw CancellationError()
             }
             throw GeminiError.networkError(error)
@@ -416,7 +439,7 @@ public actor GeminiService {
                     if errorData.count >= 65536 { break }
                 }
             } catch {
-                if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+                if Self.isCancellation(error) {
                     throw CancellationError()
                 }
             }
@@ -439,12 +462,7 @@ public actor GeminiService {
                 return result
             }
 
-            var errorMessage = "HTTP \(httpResponse.statusCode)"
-            if let errObj = try? JSONDecoder().decode(GeminiErrorResponse.self, from: errorData),
-               let msg = errObj.error?.message {
-                errorMessage = msg
-            }
-            throw GeminiError.badServerResponse(statusCode: httpResponse.statusCode, message: errorMessage)
+            throw GeminiError.badServerResponse(statusCode: httpResponse.statusCode, message: Self.errorMessage(status: httpResponse.statusCode, body: errorData))
         }
 
         var accumulatedText = ""
@@ -468,7 +486,7 @@ public actor GeminiService {
             }
             finishReason = try Self.flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
         } catch {
-            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+            if Self.isCancellation(error) {
                 throw CancellationError()
             }
             if let geminiError = error as? GeminiError { throw geminiError }
@@ -503,7 +521,7 @@ public actor GeminiService {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
-            if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
+            if Self.isCancellation(error) {
                 throw CancellationError()
             }
             throw GeminiError.networkError(error)
@@ -530,12 +548,7 @@ public actor GeminiService {
                 return result
             }
 
-            var errorMessage = "HTTP \(httpResponse.statusCode)"
-            if let errorObj = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data),
-               let msg = errorObj.error?.message {
-                errorMessage = msg
-            }
-            throw GeminiError.badServerResponse(statusCode: httpResponse.statusCode, message: errorMessage)
+            throw GeminiError.badServerResponse(statusCode: httpResponse.statusCode, message: Self.errorMessage(status: httpResponse.statusCode, body: data))
         }
 
         if rejectTruncated, Self.isTruncated(data) {
@@ -613,7 +626,7 @@ public actor GeminiService {
 
         var lastFinish: String?
         if let blockReason = promptFeedback?.blockReason {
-            throw GeminiError.decodingError(L10n.tr(ru: "Запрос заблокирован Gemini (причина: \(blockReason)).", en: "Request blocked by Gemini (reason: \(blockReason))."))
+            throw Self.blockedRequestError(reason: blockReason)
         }
 
         for candidate in candidatesList {
@@ -621,11 +634,11 @@ public actor GeminiService {
             if let finish = candidate.finishReason {
                 lastFinish = finish
                 if finish == "SAFETY" {
-                    throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован фильтрами безопасности Gemini.", en: "Response blocked by Gemini safety filters."))
+                    throw Self.blockedError(finishReason: "SAFETY")
                 } else if finish == "RECITATION" {
-                    throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован из-за совпадения с источником (RECITATION).", en: "Response blocked due to recitation check."))
+                    throw Self.blockedError(finishReason: "RECITATION")
                 } else if parts.isEmpty && finish != "STOP" && accumulatedText.isEmpty {
-                    throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован Gemini (причина: \(finish)).", en: "Response blocked by Gemini (reason: \(finish))."))
+                    throw Self.blockedError(finishReason: finish)
                 }
             }
 
@@ -715,7 +728,7 @@ public actor GeminiService {
         }
 
         if let blockReason = response.promptFeedback?.blockReason {
-            throw GeminiError.decodingError(L10n.tr(ru: "Запрос заблокирован Gemini (причина: \(blockReason)).", en: "Request blocked by Gemini (reason: \(blockReason))."))
+            throw Self.blockedRequestError(reason: blockReason)
         }
 
         guard let firstCandidate = response.candidates?.first else {
@@ -725,9 +738,9 @@ public actor GeminiService {
         if let finishReason = firstCandidate.finishReason {
             switch finishReason {
             case "SAFETY":
-                throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован фильтрами безопасности Gemini.", en: "Response blocked by Gemini safety filters."))
+                throw Self.blockedError(finishReason: "SAFETY")
             case "RECITATION":
-                throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован из-за совпадения с источником (RECITATION).", en: "Response blocked due to recitation check."))
+                throw Self.blockedError(finishReason: "RECITATION")
             default:
                 break
             }

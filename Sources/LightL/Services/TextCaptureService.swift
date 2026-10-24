@@ -38,6 +38,7 @@ public final class TextCaptureService: Sendable {
     internal static var skipSimulatePasteForTesting: Bool = false
     internal static var forcePasteboardFallbackForTesting: Bool = false
     internal static var simulatePasteDelayForTesting: UInt64? = nil
+    internal static var simulateCopyForTesting: (@MainActor () async -> Void)? = nil
 
     private var savedOriginalItems: [NSPasteboardItem]?
     private var currentRestoreTask: Task<Void, Never>?
@@ -313,7 +314,7 @@ public final class TextCaptureService: Sendable {
 
     // MARK: - Clipboard Simulation
 
-    private func getSelectionViaClipboard(timeout: TimeInterval = 0.15) async -> String? {
+    internal func getSelectionViaClipboard(timeout: TimeInterval = 0.15) async -> String? {
         let pasteboard = NSPasteboard.general
         if hasPendingRestore {
             if let original = savedOriginalItems {
@@ -357,6 +358,10 @@ public final class TextCaptureService: Sendable {
     }
 
     private func simulateCopy() async {
+        if let hook = Self.simulateCopyForTesting {
+            await hook()
+            return
+        }
         let src = CGEventSource(stateID: .privateState)
         let cDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: true)
         cDown?.flags = .maskCommand

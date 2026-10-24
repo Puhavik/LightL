@@ -186,6 +186,37 @@ public final class AppCoordinator {
 
     // MARK: - Scenario 1: Translation (Floating Popover)
 
+    private func copyAction(_ text: String) -> () -> Void {
+        {
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+        }
+    }
+
+    private func replaceAction(_ text: String, selection: CapturedSelection) -> () -> Void {
+        { [weak self] in
+            guard let self = self else { return }
+            self.translationPanel.dismiss()
+            if let targetPID = selection.frontmostAppPID,
+               let currentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier,
+               targetPID != currentPID {
+                self.statusBarController.triggerErrorBlink(
+                    message: L10n.tr(ru: "Активное окно изменилось во время обработки", en: "Active window changed during processing")
+                )
+                return
+            }
+            self.currentReplaceTask?.cancel()
+            self.currentReplaceTask = Task { [weak self] in
+                if await self?.textCapture.replaceSelection(with: text, verifying: selection) == false {
+                    self?.statusBarController.triggerErrorBlink(
+                        message: L10n.tr(ru: "Выделение изменилось, замена отменена", en: "Selection changed, replacement cancelled")
+                    )
+                }
+            }
+        }
+    }
+
     internal func handleTranslateTrigger() {
         currentRewriteTask?.cancel()
         currentRewriteTask = nil
@@ -220,7 +251,6 @@ public final class AppCoordinator {
             let originalText = selection.text
             let apiKey = self.settings.geminiApiKey
             let modelId = self.settings.selectedModelId
-            let targetPID = selection.frontmostAppPID
             let gate = StreamGate()
             defer { gate.finished = true }
 
@@ -258,31 +288,8 @@ public final class AppCoordinator {
                                 translatedText: partialText,
                                 targetLanguage: targetLanguage,
                                 isStreaming: true,
-                                onCopy: {
-                                    let pasteboard = NSPasteboard.general
-                                    pasteboard.clearContents()
-                                    pasteboard.setString(partialText, forType: .string)
-                                },
-                                onReplace: { [weak self] in
-                                    guard let self = self else { return }
-                                    self.translationPanel.dismiss()
-                                    if let targetPID = targetPID,
-                                       let currentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier,
-                                       targetPID != currentPID {
-                                        self.statusBarController.triggerErrorBlink(
-                                            message: L10n.tr(ru: "Активное окно изменилось во время обработки", en: "Active window changed during processing")
-                                        )
-                                        return
-                                    }
-                                    self.currentReplaceTask?.cancel()
-                                    self.currentReplaceTask = Task { [weak self] in
-                                        if await self?.textCapture.replaceSelection(with: partialText, verifying: selection) == false {
-                                            self?.statusBarController.triggerErrorBlink(
-                                                message: L10n.tr(ru: "Выделение изменилось, замена отменена", en: "Selection changed, replacement cancelled")
-                                            )
-                                        }
-                                    }
-                                }
+                                onCopy: self.copyAction(partialText),
+                                onReplace: self.replaceAction(partialText, selection: selection)
                             )
                         }
                     }
@@ -300,31 +307,8 @@ public final class AppCoordinator {
                     translatedText: translated,
                     targetLanguage: targetLanguage,
                     isStreaming: false,
-                    onCopy: {
-                        let pasteboard = NSPasteboard.general
-                        pasteboard.clearContents()
-                        pasteboard.setString(translated, forType: .string)
-                    },
-                    onReplace: { [weak self] in
-                        guard let self = self else { return }
-                        self.translationPanel.dismiss()
-                        if let targetPID = targetPID,
-                           let currentPID = NSWorkspace.shared.frontmostApplication?.processIdentifier,
-                           targetPID != currentPID {
-                            self.statusBarController.triggerErrorBlink(
-                                message: L10n.tr(ru: "Активное окно изменилось во время обработки", en: "Active window changed during processing")
-                            )
-                            return
-                        }
-                        self.currentReplaceTask?.cancel()
-                        self.currentReplaceTask = Task { [weak self] in
-                            if await self?.textCapture.replaceSelection(with: translated, verifying: selection) == false {
-                                            self?.statusBarController.triggerErrorBlink(
-                                                message: L10n.tr(ru: "Выделение изменилось, замена отменена", en: "Selection changed, replacement cancelled")
-                                            )
-                                        }
-                        }
-                    }
+                    onCopy: self.copyAction(translated),
+                    onReplace: self.replaceAction(translated, selection: selection)
                 )
             } catch {
                 guard !Task.isCancelled && self.currentTranslateTaskId == taskId else {

@@ -1365,6 +1365,50 @@ struct LightLTests {
         #expect(view?.canReplace == false)
     }
 
+    @Test("clipboard capture returns the copied text and restores the user's clipboard")
+    @MainActor
+    func clipboardCaptureRestoresClipboard() async {
+        let pasteboard = NSPasteboard.general
+        let userText = "User clipboard \(UUID().uuidString)"
+        pasteboard.clearContents()
+        pasteboard.setString(userText, forType: .string)
+        TextCaptureService.simulateCopyForTesting = {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString("Selected words", forType: .string)
+        }
+        defer { TextCaptureService.simulateCopyForTesting = nil }
+
+        let captured = await TextCaptureService.shared.getSelectionViaClipboard()
+        #expect(captured == "Selected words")
+        #expect(pasteboard.string(forType: .string) == userText)
+    }
+
+    @Test("clipboard capture returns nil when the copy produces nothing and keeps the user's clipboard")
+    @MainActor
+    func clipboardCaptureTimesOut() async {
+        let pasteboard = NSPasteboard.general
+        let userText = "User clipboard \(UUID().uuidString)"
+        pasteboard.clearContents()
+        pasteboard.setString(userText, forType: .string)
+        TextCaptureService.simulateCopyForTesting = {}
+        defer { TextCaptureService.simulateCopyForTesting = nil }
+
+        let captured = await TextCaptureService.shared.getSelectionViaClipboard(timeout: 0.05)
+        #expect(captured == nil)
+        #expect(pasteboard.string(forType: .string) == userText)
+    }
+
+    @Test("clipboard capture treats a copy that leaves the clipboard unchanged as no selection")
+    @MainActor
+    func clipboardCaptureIgnoresUnchangedClipboard() async {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("Old text", forType: .string)
+        TextCaptureService.simulateCopyForTesting = { }
+        defer { TextCaptureService.simulateCopyForTesting = nil }
+        #expect(await TextCaptureService.shared.getSelectionViaClipboard(timeout: 0.05) == nil)
+    }
+
     @Test("transient pasteboard items carry the clipboard-manager markers")
     func transientItemMarkers() {
         let item = TextCaptureService.makeTransientItem(text: "secret")

@@ -116,7 +116,7 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     public func destroy() {
-        stopBlinking()
+        stopActiveAnimation()
         if let obs = settingsObserver {
             NotificationCenter.default.removeObserver(obs)
             settingsObserver = nil
@@ -271,7 +271,7 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
 
     public func setLoading(_ loading: Bool) {
         guard let button = statusItem?.button else { return }
-        stopBlinking()
+        stopActiveAnimation()
         if loading {
             let img = NSImage(
                 systemSymbolName: loadingIconName,
@@ -330,10 +330,6 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
         button.image = normalIcon
         button.contentTintColor = nil
         button.toolTip = L10n.tr(ru: "LightL — AI переводчик и редактор", en: "LightL — AI Translator & Editor")
-    }
-
-    private func stopBlinking() {
-        stopActiveAnimation()
     }
 
     private func stopActiveAnimation() {

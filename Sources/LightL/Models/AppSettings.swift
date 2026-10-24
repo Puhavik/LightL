@@ -92,14 +92,6 @@ public final class AppSettings {
         NotificationCenter.default.post(name: Self.didChangeNotification, object: self)
     }
 
-    public func migrateLegacySettings() {
-        if let legacyKey = defaults.string(forKey: Keys.apiKey), !legacyKey.isEmpty {
-            if KeychainHelper.saveApiKey(legacyKey) {
-                defaults.removeObject(forKey: Keys.apiKey)
-            }
-        }
-    }
-
     private convenience init() {
         self.init(defaults: .standard, domain: Bundle.main.bundleIdentifier)
     }

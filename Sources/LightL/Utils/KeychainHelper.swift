@@ -5,7 +5,7 @@ public enum KeychainHelper {
     public static let serviceName = "com.puhavik.LightL"
     private static let legacyServiceName = "com.user.LightL"
     public static let accountName = "GeminiApiKey"
-    nonisolated(unsafe) public static var accessGroup: String? = nil
+    private static let useDataProtectionOrder = [true, false]
 
     private static let storageLock = NSLock()
     nonisolated(unsafe) public static var inMemoryStorage: [String: String]? = nil
@@ -62,25 +62,15 @@ public enum KeychainHelper {
             return true
         }
 
-        var configurations: [(useDataProtection: Bool, group: String?)] = []
-        if let group = accessGroup, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            configurations.append((useDataProtection: true, group: group))
-        }
-        configurations.append((useDataProtection: true, group: nil))
-        configurations.append((useDataProtection: false, group: nil))
-
-        for config in configurations {
+        for useDataProtection in Self.useDataProtectionOrder {
             var query: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
                 kSecAttrService: service,
                 kSecAttrAccount: account,
                 kSecUseAuthenticationUI as CFString: kSecUseAuthenticationUIFail as CFString
             ]
-            if config.useDataProtection {
+            if useDataProtection {
                 query[kSecUseDataProtectionKeychain as CFString] = kCFBooleanTrue as Any
-            }
-            if let group = config.group {
-                query[kSecAttrAccessGroup] = group
             }
 
             let attributesToUpdate: [CFString: Any] = [
@@ -138,14 +128,7 @@ public enum KeychainHelper {
             return memVal
         }
 
-        var configurations: [(useDataProtection: Bool, group: String?)] = []
-        if let group = accessGroup, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            configurations.append((useDataProtection: true, group: group))
-        }
-        configurations.append((useDataProtection: true, group: nil))
-        configurations.append((useDataProtection: false, group: nil))
-
-        for config in configurations {
+        for useDataProtection in Self.useDataProtectionOrder {
             var query: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
                 kSecAttrService: service,
@@ -154,11 +137,8 @@ public enum KeychainHelper {
                 kSecMatchLimit: kSecMatchLimitOne,
                 kSecUseAuthenticationUI as CFString: kSecUseAuthenticationUIFail as CFString
             ]
-            if config.useDataProtection {
+            if useDataProtection {
                 query[kSecUseDataProtectionKeychain as CFString] = kCFBooleanTrue as Any
-            }
-            if let group = config.group {
-                query[kSecAttrAccessGroup] = group
             }
 
             var item: CFTypeRef?
@@ -184,25 +164,15 @@ public enum KeychainHelper {
         }
         if handledInMemory { return }
 
-        var configurations: [(useDataProtection: Bool, group: String?)] = []
-        if let group = accessGroup, !group.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            configurations.append((useDataProtection: true, group: group))
-        }
-        configurations.append((useDataProtection: true, group: nil))
-        configurations.append((useDataProtection: false, group: nil))
-
-        for config in configurations {
+        for useDataProtection in Self.useDataProtectionOrder {
             var query: [CFString: Any] = [
                 kSecClass: kSecClassGenericPassword,
                 kSecAttrService: service,
                 kSecAttrAccount: account,
                 kSecUseAuthenticationUI as CFString: kSecUseAuthenticationUIFail as CFString
             ]
-            if config.useDataProtection {
+            if useDataProtection {
                 query[kSecUseDataProtectionKeychain as CFString] = kCFBooleanTrue as Any
-            }
-            if let group = config.group {
-                query[kSecAttrAccessGroup] = group
             }
             let status = SecItemDelete(query as CFDictionary)
             if status == errSecMissingEntitlement {
