@@ -95,7 +95,7 @@ public final class TextCaptureService: Sendable {
             if original.viaAccessibility {
                 let current = await getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0
                 if current != original.text { return false }
-            } else if await getSelectionViaClipboard() != original.text {
+            } else if await getSelectionViaClipboard(timeout: 0.5) != original.text {
                 return false
             }
         }
@@ -269,7 +269,7 @@ public final class TextCaptureService: Sendable {
 
     // MARK: - Clipboard Simulation
 
-    private func getSelectionViaClipboard() async -> String? {
+    private func getSelectionViaClipboard(timeout: TimeInterval = 0.15) async -> String? {
         let pasteboard = NSPasteboard.general
         if currentRestoreTask != nil {
             if let original = savedOriginalItems {
@@ -288,7 +288,7 @@ public final class TextCaptureService: Sendable {
         let start = Date()
         var updated = false
         var pollInterval: UInt64 = 6_000_000 // 6ms
-        while Date().timeIntervalSince(start) < 0.15 {
+        while Date().timeIntervalSince(start) < timeout {
             if Task.isCancelled { break }
             if pasteboard.changeCount != previousChangeCount {
                 updated = true

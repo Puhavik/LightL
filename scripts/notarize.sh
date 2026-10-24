@@ -10,6 +10,7 @@ fi
 
 WORK_DIR="${RUNNER_TEMP:-$(mktemp -d)}"
 AUTH_KEY_PATH="${WORK_DIR}/AuthKey_${APPLE_API_KEY_ID}.p8"
+trap 'rm -f "$AUTH_KEY_PATH"' EXIT
 echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$AUTH_KEY_PATH"
 
 SUBMIT_PATH="$TARGET"

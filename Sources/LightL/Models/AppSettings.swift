@@ -31,6 +31,9 @@ public final class AppSettings {
             if saved {
                 defaults.removeObject(forKey: Keys.apiKey)
             }
+            if defaults.object(forKey: Keys.doubleCmdCEnabled) == nil {
+                defaults.set(doubleCmdCEnabled, forKey: Keys.doubleCmdCEnabled)
+            }
             notifyChange()
         }
     }
@@ -126,8 +129,11 @@ public final class AppSettings {
             self.doubleCmdCEnabled = stored
         } else {
             // Off for new installs; installs that already have an API key keep the previous on-by-default behavior.
+            // Only a positive finding is persisted, so a transiently unreadable Keychain cannot lock in "off".
             self.doubleCmdCEnabled = hasExistingInstall
-            defaults.set(hasExistingInstall, forKey: Keys.doubleCmdCEnabled)
+            if hasExistingInstall {
+                defaults.set(true, forKey: Keys.doubleCmdCEnabled)
+            }
         }
 
         if let modeString = defaults.string(forKey: Keys.rewriteMode) {

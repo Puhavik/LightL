@@ -80,14 +80,19 @@ public final class AppCoordinator {
     }
 
     private var appliedHotKeyState: (ShortcutModel, ShortcutModel)?
+    private var appliedDoubleCmdC: Bool?
 
     private func applyCurrentHotKeys() {
         let state = (settings.translateShortcut, settings.rewriteShortcut)
         if let applied = appliedHotKeyState, applied == state {
-            hotKeyManager.recheckDoubleCmdCMonitor()
+            if appliedDoubleCmdC != settings.doubleCmdCEnabled {
+                appliedDoubleCmdC = settings.doubleCmdCEnabled
+                hotKeyManager.recheckDoubleCmdCMonitor()
+            }
             return
         }
         appliedHotKeyState = state
+        appliedDoubleCmdC = settings.doubleCmdCEnabled
         let (translateSuccess, rewriteSuccess) = hotKeyManager.updateHotKeys(
             translateShortcut: settings.translateShortcut,
             rewriteShortcut: settings.rewriteShortcut,

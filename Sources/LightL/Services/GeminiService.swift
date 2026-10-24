@@ -443,8 +443,19 @@ public actor GeminiService {
         var sseBuffer = ""
 
         do {
-            for try await rawLine in asyncBytes.lines {
-                try Self.consumeSSELine(rawLine, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+            // AsyncBytes.lines drops blank lines, which are the SSE event separators, so split on '\n' manually.
+            var lineBytes: [UInt8] = []
+            for try await byte in asyncBytes {
+                if byte == 0x0A {
+                    let line = String(decoding: lineBytes, as: UTF8.self)
+                    lineBytes.removeAll(keepingCapacity: true)
+                    try Self.consumeSSELine(line, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+                } else {
+                    lineBytes.append(byte)
+                }
+            }
+            if !lineBytes.isEmpty {
+                try Self.consumeSSELine(String(decoding: lineBytes, as: UTF8.self), buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
             }
             try Self.flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
         } catch {
@@ -625,10 +636,6 @@ public actor GeminiService {
             var payload = String(line.dropFirst(5))
             if payload.hasPrefix(" ") {
                 payload.removeFirst()
-            }
-            // URLSession.AsyncBytes.lines drops blank lines, so a complete JSON event is the only event boundary it leaves.
-            if !buffer.isEmpty, (try? JSONSerialization.jsonObject(with: Data(buffer.utf8))) != nil {
-                try flushSSEBuffer(&buffer, accumulatedText: &accumulatedText, onChunk: onChunk)
             }
             if !buffer.isEmpty {
                 buffer += "\n"
