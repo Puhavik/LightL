@@ -1189,10 +1189,27 @@ struct LightLTests {
         #expect(pasteboard.string(forType: .string) == originalText)
     }
 
-    @Test("GeminiService rethrows truncated stream errors instead of falling back")
-    func truncatedErrorIsDistinct() {
-        let error: Error = GeminiError.truncated
-        if case GeminiError.truncated = error {} else { Issue.record("expected truncated") }
+    @Test("GeminiService translate surfaces a truncated stream without falling back to a second request")
+    func truncatedStreamDoesNotFallBack() async {
+        TruncatedStreamURLProtocol.requestCount = 0
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TruncatedStreamURLProtocol.self]
+        let service = GeminiService(session: URLSession(configuration: config))
+
+        var thrown: Error?
+        do {
+            _ = try await service.translate(
+                text: "hello",
+                targetLanguage: LanguageModel.defaultTarget,
+                apiKey: "k",
+                model: "gemini-test",
+                onChunk: { _ in }
+            )
+        } catch {
+            thrown = error
+        }
+        if case GeminiError.truncated? = thrown {} else { Issue.record("expected .truncated, got \(String(describing: thrown))") }
+        #expect(TruncatedStreamURLProtocol.requestCount == 1)
     }
 
     // MARK: - Audited Bug Fixes Verification Tests
@@ -1250,4 +1267,23 @@ struct LightLTests {
     func hotKeyManagerRecheckDoubleCmdCMonitor() {
         HotKeyManager.shared.recheckDoubleCmdCMonitor()
     }
+}
+
+final class TruncatedStreamURLProtocol: URLProtocol, @unchecked Sendable {
+    nonisolated(unsafe) static var requestCount = 0
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        Self.requestCount += 1
+        let body = "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"partial\"}]}}]}\n\n"
+            + "data: {\"candidates\": [{\"content\": {\"parts\": []}, \"finishReason\": \"MAX_TOKENS\"}]}\n\n"
+        let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: ["Content-Type": "text/event-stream"])!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data(body.utf8))
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

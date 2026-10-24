@@ -101,9 +101,12 @@ public final class AppSettings {
     }
 
     private init() {
+        var hasExistingInstall = false
         if let key = KeychainHelper.loadApiKey(), !key.isEmpty {
+            hasExistingInstall = true
             self.geminiApiKey = key
         } else if let legacyKey = defaults.string(forKey: Keys.apiKey), !legacyKey.isEmpty {
+            hasExistingInstall = true
             self.geminiApiKey = legacyKey
             if KeychainHelper.saveApiKey(legacyKey) {
                 defaults.removeObject(forKey: Keys.apiKey)
@@ -119,7 +122,13 @@ public final class AppSettings {
         } else {
             self.selectedModelId = GeminiModelOption.defaultModel.modelId
         }
-        self.doubleCmdCEnabled = defaults.object(forKey: Keys.doubleCmdCEnabled) as? Bool ?? false
+        if let stored = defaults.object(forKey: Keys.doubleCmdCEnabled) as? Bool {
+            self.doubleCmdCEnabled = stored
+        } else {
+            // Off for new installs; installs that already have an API key keep the previous on-by-default behavior.
+            self.doubleCmdCEnabled = hasExistingInstall
+            defaults.set(hasExistingInstall, forKey: Keys.doubleCmdCEnabled)
+        }
 
         if let modeString = defaults.string(forKey: Keys.rewriteMode) {
             self.rewriteMode = RewriteMode(rawValue: modeString) ?? .proofread

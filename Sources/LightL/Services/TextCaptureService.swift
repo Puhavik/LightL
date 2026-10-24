@@ -95,7 +95,7 @@ public final class TextCaptureService: Sendable {
             if original.viaAccessibility {
                 let current = await getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0
                 if current != original.text { return false }
-            } else if let current = await getSelectionViaClipboard(), current != original.text {
+            } else if await getSelectionViaClipboard() != original.text {
                 return false
             }
         }

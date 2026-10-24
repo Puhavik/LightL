@@ -12,8 +12,9 @@ final class ShortcutRecorderController {
     func startRecording(onCaptured: @escaping (ShortcutModel) -> Void, onCancelled: @escaping () -> Void) {
         stopRecording()
         if let other = Self.active, other !== self, other.isRecording {
+            let handler = other.cancelHandler
             other.stopRecording()
-            other.cancelHandler?()
+            handler?()
         }
         Self.active = self
         cancelHandler = onCancelled
@@ -56,6 +57,7 @@ final class ShortcutRecorderController {
 
     func stopRecording() {
         isRecording = false
+        cancelHandler = nil
         if let monitor = localMonitor {
             NSEvent.removeMonitor(monitor)
             localMonitor = nil

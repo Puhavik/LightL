@@ -7,12 +7,13 @@ All notable user-facing features, improvements, and fixes for LightL.
 ## [Unreleased]
 
 ### Changed
-- **Double-tap ⌘C is now off by default** (it sends the selection to Google Gemini); enable it in Settings → Translation.
+- **Double-tap ⌘C is now off by default for new installs** (it sends the selection to Google Gemini); installs that already have an API key keep their current setting. Change it in Settings → Translation.
 - Translations cut off at the length limit now fail with a clear message instead of showing partial text that could be pasted over the original.
 - Replacing text re-checks that the selection is unchanged, also for apps that are read through the clipboard.
 - Unavailable or conflicting shortcuts now blink the menu bar icon and name the shortcut.
 
 ### Fixed
+- Streaming translation: events were merged into one invalid payload (blank separator lines are dropped by `URLSession`), so every translation silently fell back to a second non-streaming request.
 - Clipboard is restored even when a replacement is cancelled.
 - Accessibility queries no longer run on the main thread.
 - Models that reject `thinkingBudget` are remembered, so the extra failed request happens once.

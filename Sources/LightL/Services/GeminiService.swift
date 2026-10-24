@@ -71,6 +71,10 @@ public actor GeminiService {
     private let session: URLSession
     private var modelsRejectingThinking: Set<String> = []
 
+    internal init(session: URLSession) {
+        self.session = session
+    }
+
     private init() {
         let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 25.0
@@ -203,6 +207,15 @@ public actor GeminiService {
             }
         }
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Retries a 400 that rejects thinkingConfig without it, and remembers the model so later requests skip the failed attempt.
+    private func thinkingFallbackConfig(status: Int, body: String, url: URL, config: [String: Any], canRetry: Bool) -> [String: Any]? {
+        guard status == 400, canRetry, body.lowercased().contains("thinking") else { return nil }
+        modelsRejectingThinking.insert(Self.modelKey(url))
+        var fallback = config
+        fallback.removeValue(forKey: "thinkingConfig")
+        return fallback
     }
 
     private static func modelKey(_ url: URL) -> String {
@@ -406,23 +419,16 @@ public actor GeminiService {
 
             let errorBody = String(data: errorData, encoding: .utf8) ?? ""
 
-            // Retry on 400 only if error response text contains "thinking" or "thinkingConfig"
-            if httpResponse.statusCode == 400 && canRetryWithoutThinking {
-                let lowerError = errorBody.lowercased()
-                if lowerError.contains("thinking") || lowerError.contains("budget") {
-                    modelsRejectingThinking.insert(Self.modelKey(url))
-                    var fallbackConfig = generationConfig
-                    fallbackConfig.removeValue(forKey: "thinkingConfig")
-                    return try await executeStreamGenerate(
-                        url: url,
-                        prompt: prompt,
-                        systemInstruction: systemInstruction,
-                        apiKey: apiKey,
-                        generationConfig: fallbackConfig,
-                        onChunk: onChunk,
-                        canRetryWithoutThinking: false
-                    )
-                }
+            if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, url: url, config: generationConfig, canRetry: canRetryWithoutThinking) {
+                return try await executeStreamGenerate(
+                    url: url,
+                    prompt: prompt,
+                    systemInstruction: systemInstruction,
+                    apiKey: apiKey,
+                    generationConfig: fallbackConfig,
+                    onChunk: onChunk,
+                    canRetryWithoutThinking: false
+                )
             }
 
             var errorMessage = "HTTP \(httpResponse.statusCode)"
@@ -487,23 +493,16 @@ public actor GeminiService {
 
         if httpResponse.statusCode != 200 {
             let errorBody = String(data: data, encoding: .utf8) ?? ""
-            // Retry on 400 only if error response text contains "thinking" or "thinkingConfig"
-            if httpResponse.statusCode == 400 && canRetryWithoutThinking {
-                let lowerError = errorBody.lowercased()
-                if lowerError.contains("thinking") || lowerError.contains("budget") {
-                    modelsRejectingThinking.insert(Self.modelKey(url))
-                    var fallbackConfig = generationConfig
-                    fallbackConfig.removeValue(forKey: "thinkingConfig")
-                    return try await executeGenerate(
-                        url: url,
-                        prompt: prompt,
-                        systemInstruction: systemInstruction,
-                        apiKey: apiKey,
-                        generationConfig: fallbackConfig,
-                        canRetryWithoutThinking: false,
-                        rejectTruncated: rejectTruncated
-                    )
-                }
+            if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, url: url, config: generationConfig, canRetry: canRetryWithoutThinking) {
+                return try await executeGenerate(
+                    url: url,
+                    prompt: prompt,
+                    systemInstruction: systemInstruction,
+                    apiKey: apiKey,
+                    generationConfig: fallbackConfig,
+                    canRetryWithoutThinking: false,
+                    rejectTruncated: rejectTruncated
+                )
             }
 
             var errorMessage = "HTTP \(httpResponse.statusCode)"
@@ -626,6 +625,10 @@ public actor GeminiService {
             var payload = String(line.dropFirst(5))
             if payload.hasPrefix(" ") {
                 payload.removeFirst()
+            }
+            // URLSession.AsyncBytes.lines drops blank lines, so a complete JSON event is the only event boundary it leaves.
+            if !buffer.isEmpty, (try? JSONSerialization.jsonObject(with: Data(buffer.utf8))) != nil {
+                try flushSSEBuffer(&buffer, accumulatedText: &accumulatedText, onChunk: onChunk)
             }
             if !buffer.isEmpty {
                 buffer += "\n"
