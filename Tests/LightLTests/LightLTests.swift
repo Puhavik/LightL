@@ -1189,6 +1189,26 @@ struct LightLTests {
         #expect(pasteboard.string(forType: .string) == originalText)
     }
 
+    @Test("GeminiService does not retry a blocked stream and falls back when a stream ends without finishReason")
+    func blockedAndIncompleteStreams() async throws {
+        defer { TruncatedStreamURLProtocol.body = TruncatedStreamURLProtocol.truncatedBody }
+        let config = URLSessionConfiguration.ephemeral
+        config.protocolClasses = [TruncatedStreamURLProtocol.self]
+        let service = GeminiService(session: URLSession(configuration: config))
+
+        TruncatedStreamURLProtocol.requestCount = 0
+        TruncatedStreamURLProtocol.body = "data: {\"candidates\": [{\"content\": {\"parts\": []}, \"finishReason\": \"SAFETY\"}]}\n\n"
+        await #expect(throws: GeminiError.self) {
+            _ = try await service.translate(text: "hello", targetLanguage: LanguageModel.defaultTarget, apiKey: "k", model: "gemini-test", onChunk: { _ in })
+        }
+        #expect(TruncatedStreamURLProtocol.requestCount == 1)
+
+        TruncatedStreamURLProtocol.requestCount = 0
+        TruncatedStreamURLProtocol.body = "data: {\"candidates\": [{\"content\": {\"parts\": [{\"text\": \"Hel\"}]}}]}\n\n"
+        _ = try? await service.translate(text: "hello", targetLanguage: LanguageModel.defaultTarget, apiKey: "k", model: "gemini-test", onChunk: { _ in })
+        #expect(TruncatedStreamURLProtocol.requestCount == 2)
+    }
+
     @Test("GeminiService streams consecutive SSE events in one request")
     func streamAccumulatesConsecutiveEvents() async throws {
         TruncatedStreamURLProtocol.requestCount = 0

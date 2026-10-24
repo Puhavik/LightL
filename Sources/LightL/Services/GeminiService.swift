@@ -210,17 +210,12 @@ public actor GeminiService {
     }
 
     /// Retries a 400 that rejects thinkingConfig without it, and remembers the model so later requests skip the failed attempt.
-    private func thinkingFallbackConfig(status: Int, body: String, url: URL, config: [String: Any], canRetry: Bool) -> [String: Any]? {
+    private func thinkingFallbackConfig(status: Int, body: String, model: String, config: [String: Any], canRetry: Bool) -> [String: Any]? {
         guard status == 400, canRetry, body.lowercased().contains("thinking") else { return nil }
-        modelsRejectingThinking.insert(Self.modelKey(url))
+        modelsRejectingThinking.insert(model)
         var fallback = config
         fallback.removeValue(forKey: "thinkingConfig")
         return fallback
-    }
-
-    private static func modelKey(_ url: URL) -> String {
-        let last = url.lastPathComponent
-        return last.split(separator: ":").first.map(String.init) ?? last
     }
 
     internal static func sanitizeApiKey(_ apiKey: String) -> String {
@@ -271,12 +266,14 @@ public actor GeminiService {
             do {
                 let streamResult = try await executeStreamGenerate(
                     url: url,
+                    model: cleanModel,
                     prompt: prompt,
                     systemInstruction: systemInstruction,
                     apiKey: apiKey,
                     generationConfig: generationConfig,
                     onChunk: onChunk,
-                    canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil
+                    canRetryWithoutThinking: generationConfig["thinkingConfig"] != nil,
+                    rejectTruncated: rejectTruncated
                 )
                 let trimmed = streamResult.trimmingCharacters(in: .whitespacesAndNewlines)
                 if !trimmed.isEmpty {
@@ -293,6 +290,10 @@ public actor GeminiService {
                 if case GeminiError.truncated = error {
                     throw error
                 }
+                // Blocked content (safety, recitation, block reason) is deterministic: a second request returns the same block.
+                if case GeminiError.decodingError = error {
+                    throw error
+                }
                 // Otherwise fall back to non-streaming generateContent
             }
 
@@ -303,6 +304,7 @@ public actor GeminiService {
             }
             let nonStreamResult = try await executeGenerate(
                 url: nonStreamUrl,
+                model: cleanModel,
                 prompt: prompt,
                 systemInstruction: systemInstruction,
                 apiKey: apiKey,
@@ -315,6 +317,7 @@ public actor GeminiService {
         } else {
             return try await executeGenerate(
                 url: url,
+                model: cleanModel,
                 prompt: prompt,
                 systemInstruction: systemInstruction,
                 apiKey: apiKey,
@@ -374,12 +377,14 @@ public actor GeminiService {
 
     private func executeStreamGenerate(
         url: URL,
+        model: String,
         prompt: String,
         systemInstruction: String,
         apiKey: String,
         generationConfig: [String: Any],
         onChunk: @escaping @Sendable (String) -> Void,
-        canRetryWithoutThinking: Bool
+        canRetryWithoutThinking: Bool,
+        rejectTruncated: Bool
     ) async throws -> String {
         let request = try buildURLRequest(
             url: url,
@@ -419,15 +424,17 @@ public actor GeminiService {
 
             let errorBody = String(data: errorData, encoding: .utf8) ?? ""
 
-            if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, url: url, config: generationConfig, canRetry: canRetryWithoutThinking) {
+            if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, model: model, config: generationConfig, canRetry: canRetryWithoutThinking) {
                 return try await executeStreamGenerate(
                     url: url,
+                    model: model,
                     prompt: prompt,
                     systemInstruction: systemInstruction,
                     apiKey: apiKey,
                     generationConfig: fallbackConfig,
                     onChunk: onChunk,
-                    canRetryWithoutThinking: false
+                    canRetryWithoutThinking: false,
+                    rejectTruncated: rejectTruncated
                 )
             }
 
@@ -441,6 +448,7 @@ public actor GeminiService {
 
         var accumulatedText = ""
         var sseBuffer = ""
+        var finishReason: String?
 
         do {
             // AsyncBytes.lines drops blank lines, which are the SSE event separators, so split on '\n' manually.
@@ -449,15 +457,15 @@ public actor GeminiService {
                 if byte == 0x0A {
                     let line = String(decoding: lineBytes, as: UTF8.self)
                     lineBytes.removeAll(keepingCapacity: true)
-                    try Self.consumeSSELine(line, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+                    finishReason = try Self.consumeSSELine(line, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
                 } else {
                     lineBytes.append(byte)
                 }
             }
             if !lineBytes.isEmpty {
-                try Self.consumeSSELine(String(decoding: lineBytes, as: UTF8.self), buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+                finishReason = try Self.consumeSSELine(String(decoding: lineBytes, as: UTF8.self), buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
             }
-            try Self.flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+            finishReason = try Self.flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
         } catch {
             if error is CancellationError || (error as? URLError)?.code == .cancelled || Task.isCancelled {
                 throw CancellationError()
@@ -466,12 +474,14 @@ public actor GeminiService {
             throw GeminiError.networkError(error)
         }
 
+        try Self.validateStreamEnd(finishReason: finishReason, rejectTruncated: rejectTruncated, requireFinish: true)
         let trimmedResult = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmedResult
     }
 
     private func executeGenerate(
         url: URL,
+        model: String,
         prompt: String,
         systemInstruction: String,
         apiKey: String,
@@ -504,9 +514,10 @@ public actor GeminiService {
 
         if httpResponse.statusCode != 200 {
             let errorBody = String(data: data, encoding: .utf8) ?? ""
-            if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, url: url, config: generationConfig, canRetry: canRetryWithoutThinking) {
+            if let fallbackConfig = thinkingFallbackConfig(status: httpResponse.statusCode, body: errorBody, model: model, config: generationConfig, canRetry: canRetryWithoutThinking) {
                 return try await executeGenerate(
                     url: url,
+                    model: model,
                     prompt: prompt,
                     systemInstruction: systemInstruction,
                     apiKey: apiKey,
@@ -576,8 +587,8 @@ public actor GeminiService {
         _ jsonString: String,
         accumulatedText: inout String,
         onChunk: ((String) -> Void)? = nil
-    ) throws {
-        guard let data = jsonString.data(using: .utf8) else { return }
+    ) throws -> String? {
+        guard let data = jsonString.data(using: .utf8) else { return nil }
 
         if let err = try? JSONDecoder().decode(GeminiErrorResponse.self, from: data),
            let msg = err.error?.message {
@@ -594,9 +605,10 @@ public actor GeminiService {
             candidatesList = arrayChunk.flatMap { $0.candidates ?? [] }
             promptFeedback = arrayChunk.compactMap { $0.promptFeedback }.first
         } else {
-            return
+            return nil
         }
 
+        var lastFinish: String?
         if let blockReason = promptFeedback?.blockReason {
             throw GeminiError.decodingError(L10n.tr(ru: "Запрос заблокирован Gemini (причина: \(blockReason)).", en: "Request blocked by Gemini (reason: \(blockReason))."))
         }
@@ -604,12 +616,11 @@ public actor GeminiService {
         for candidate in candidatesList {
             let parts = candidate.content?.parts ?? []
             if let finish = candidate.finishReason {
+                lastFinish = finish
                 if finish == "SAFETY" {
                     throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован фильтрами безопасности Gemini.", en: "Response blocked by Gemini safety filters."))
                 } else if finish == "RECITATION" {
                     throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован из-за совпадения с источником (RECITATION).", en: "Response blocked due to recitation check."))
-                } else if finish == "MAX_TOKENS" {
-                    throw GeminiError.truncated
                 } else if parts.isEmpty && finish != "STOP" && accumulatedText.isEmpty {
                     throw GeminiError.decodingError(L10n.tr(ru: "Ответ заблокирован Gemini (причина: \(finish)).", en: "Response blocked by Gemini (reason: \(finish))."))
                 }
@@ -623,6 +634,16 @@ public actor GeminiService {
                 }
             }
         }
+        return lastFinish
+    }
+
+    internal static func validateStreamEnd(finishReason: String?, rejectTruncated: Bool, requireFinish: Bool) throws {
+        if finishReason == "MAX_TOKENS", rejectTruncated {
+            throw GeminiError.truncated
+        }
+        if requireFinish, finishReason == nil {
+            throw GeminiError.networkError(URLError(.networkConnectionLost))
+        }
     }
 
     internal static func consumeSSELine(
@@ -630,7 +651,7 @@ public actor GeminiService {
         buffer: inout String,
         accumulatedText: inout String,
         onChunk: ((String) -> Void)?
-    ) throws {
+    ) throws -> String? {
         let line = rawLine.hasSuffix("\r") ? String(rawLine.dropLast()) : rawLine
         if line.hasPrefix("data:") {
             var payload = String(line.dropFirst(5))
@@ -642,19 +663,20 @@ public actor GeminiService {
             }
             buffer += payload
         } else if line.trimmingCharacters(in: .whitespaces).isEmpty {
-            try flushSSEBuffer(&buffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+            return try flushSSEBuffer(&buffer, accumulatedText: &accumulatedText, onChunk: onChunk)
         }
+        return nil
     }
 
     internal static func flushSSEBuffer(
         _ buffer: inout String,
         accumulatedText: inout String,
         onChunk: ((String) -> Void)?
-    ) throws {
-        guard !buffer.isEmpty else { return }
+    ) throws -> String? {
+        guard !buffer.isEmpty else { return nil }
         let payload = buffer
         buffer = ""
-        try processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
+        return try processSSEPayload(payload, accumulatedText: &accumulatedText, onChunk: onChunk)
     }
 
     internal static func parseSSELines<S: Sequence>(
@@ -663,11 +685,13 @@ public actor GeminiService {
     ) throws -> String where S.Element == String {
         var accumulatedText = ""
         var sseBuffer = ""
+        var finishReason: String?
 
         for rawLine in lines {
-            try consumeSSELine(rawLine, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+            finishReason = try consumeSSELine(rawLine, buffer: &sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
         }
-        try flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk)
+        finishReason = try flushSSEBuffer(&sseBuffer, accumulatedText: &accumulatedText, onChunk: onChunk) ?? finishReason
+        try validateStreamEnd(finishReason: finishReason, rejectTruncated: true, requireFinish: false)
 
         let trimmedResult = accumulatedText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedResult.isEmpty else {

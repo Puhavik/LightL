@@ -14,6 +14,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ### Fixed
 - Streaming translation: events were merged into one invalid payload (blank separator lines are dropped by `URLSession`), so every translation silently fell back to a second non-streaming request.
+- A stream that closes without a finish reason is no longer shown as a complete translation, and blocked responses are no longer re-requested.
 - Clipboard is restored even when a replacement is cancelled.
 - Accessibility queries no longer run on the main thread.
 - Models that reject `thinkingBudget` are remembered, so the extra failed request happens once.
