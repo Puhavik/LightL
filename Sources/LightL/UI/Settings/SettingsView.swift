@@ -4,6 +4,7 @@ import AppKit
 // MARK: - Tab Enum
 
 enum SettingsTab: String, CaseIterable, Identifiable {
+    case general = "general"
     case aiModel = "ai_model"
     case translation = "translation"
     case rewrite = "rewrite"
@@ -14,6 +15,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .general: return L10n.tr(ru: "Основные", en: "General")
         case .aiModel: return L10n.tr(ru: "ИИ и Модель", en: "AI & Model")
         case .translation: return L10n.tr(ru: "Перевод", en: "Translation")
         case .rewrite: return L10n.tr(ru: "Исправление", en: "Correction")
@@ -24,6 +26,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .general: return "gearshape.fill"
         case .aiModel: return "sparkles"
         case .translation: return "character.book.closed.fill"
         case .rewrite: return "text.badge.checkmark"
@@ -34,6 +37,8 @@ enum SettingsTab: String, CaseIterable, Identifiable {
 
     var iconGradient: [Color] {
         switch self {
+        case .general:
+            return [Color(red: 0.55, green: 0.57, blue: 0.62), Color(red: 0.38, green: 0.40, blue: 0.45)]
         case .aiModel:
             return [Color(red: 0.62, green: 0.38, blue: 0.98), Color(red: 0.44, green: 0.22, blue: 0.88)]
         case .translation:
@@ -201,6 +206,8 @@ public struct SettingsView: View {
             ScrollView(.vertical, showsIndicators: true) {
                 VStack(alignment: .leading, spacing: 16) {
                     switch selectedTab {
+                    case .general:
+                        GeneralTab()
                     case .aiModel:
                         AIModelTab()
                     case .translation:
@@ -906,8 +913,7 @@ struct PermissionsTab: View {
 
 // MARK: - Tab 5: Appearance Content (macOS 27 HIG Standards)
 
-struct AppearanceTab: View {
-    @Bindable var settings = AppSettings.shared
+struct GeneralTab: View {
     @State private var launchAtLogin = LaunchAtLogin.isRequested
 
     var body: some View {
@@ -931,7 +937,15 @@ struct AppearanceTab: View {
             .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                 launchAtLogin = LaunchAtLogin.isRequested
             }
+        }
+    }
+}
 
+struct AppearanceTab: View {
+    @Bindable var settings = AppSettings.shared
+
+    var body: some View {
+        VStack(spacing: 14) {
             // Language Selection Card
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
