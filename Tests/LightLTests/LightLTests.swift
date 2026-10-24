@@ -1263,6 +1263,47 @@ struct LightLTests {
         #expect(!TextCaptureService.looksLikeEmptySelectionLineCopy("a\nb"))
     }
 
+    @Test("A pending restore is reported between writing the replacement and scheduling the restore")
+    @MainActor
+    func pendingRestoreWindow() async throws {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString("Original \(UUID().uuidString)", forType: .string)
+
+        TextCaptureService.accessibilityOverrideForTesting = true
+        TextCaptureService.skipSimulatePasteForTesting = true
+        TextCaptureService.forcePasteboardFallbackForTesting = true
+        TextCaptureService.pasteboardRestoreDelayForTesting = 50_000_000
+        TextCaptureService.simulatePasteDelayForTesting = 300_000_000
+        defer {
+            TextCaptureService.accessibilityOverrideForTesting = nil
+            TextCaptureService.skipSimulatePasteForTesting = false
+            TextCaptureService.forcePasteboardFallbackForTesting = false
+            TextCaptureService.pasteboardRestoreDelayForTesting = nil
+            TextCaptureService.simulatePasteDelayForTesting = nil
+        }
+
+        let task = Task { @MainActor in
+            await TextCaptureService.shared.replaceSelection(with: "Replacement \(UUID().uuidString)")
+        }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        #expect(TextCaptureService.shared.hasPendingRestoreTaskForTesting == false)
+        #expect(TextCaptureService.shared.hasPendingRestore == true)
+        _ = await task.value
+        while TextCaptureService.shared.hasPendingRestore {
+            try await Task.sleep(nanoseconds: 30_000_000)
+        }
+    }
+
+    @Test("Replace is refused for an ambiguous whole-line clipboard capture")
+    @MainActor
+    func ambiguousLineCopyIsNotReplaced() async {
+        TextCaptureService.accessibilityOverrideForTesting = true
+        defer { TextCaptureService.accessibilityOverrideForTesting = nil }
+        let selection = CapturedSelection(text: "let x = 1\n", bounds: nil, mouseLocation: .zero, isAmbiguousLineCopy: true)
+        #expect(await TextCaptureService.shared.replaceSelection(with: "let y = 2", verifying: selection) == false)
+    }
+
     @Test("Line-copy heuristic applies only to editors known to copy the caret line")
     func editorsCopyingCaretLine() {
         #expect(TextCaptureService.copiesLineWhenSelectionEmpty(bundleID: "com.microsoft.VSCode"))

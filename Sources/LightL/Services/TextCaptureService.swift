@@ -10,9 +10,12 @@ public struct CapturedSelection: Sendable {
     public let frontmostAppPID: pid_t?
     /// True when the text was read through the Accessibility API, so it can be re-read to detect selection changes.
     public let viaAccessibility: Bool
+    /// True when the clipboard text looks like an editor's whole-line copy, which may mean nothing was selected.
+    public let isAmbiguousLineCopy: Bool
 
-    public init(text: String, bounds: CGRect?, mouseLocation: CGPoint, frontmostAppPID: pid_t? = nil, viaAccessibility: Bool = false) {
+    public init(text: String, bounds: CGRect?, mouseLocation: CGPoint, frontmostAppPID: pid_t? = nil, viaAccessibility: Bool = false, isAmbiguousLineCopy: Bool = false) {
         self.viaAccessibility = viaAccessibility
+        self.isAmbiguousLineCopy = isAmbiguousLineCopy
         self.text = text
         self.bounds = bounds
         self.mouseLocation = mouseLocation
@@ -28,6 +31,7 @@ public final class TextCaptureService: Sendable {
     internal static var pasteboardRestoreDelayForTesting: UInt64? = nil
     internal static var skipSimulatePasteForTesting: Bool = false
     internal static var forcePasteboardFallbackForTesting: Bool = false
+    internal static var simulatePasteDelayForTesting: UInt64? = nil
 
     private var savedOriginalItems: [NSPasteboardItem]?
     private var currentRestoreTask: Task<Void, Never>?
@@ -38,6 +42,10 @@ public final class TextCaptureService: Sendable {
 
     internal var hasPendingRestoreTaskForTesting: Bool {
         currentRestoreTask != nil
+    }
+
+    internal var hasPendingRestore: Bool {
+        currentRestoreTask != nil || savedOriginalItems != nil
     }
 
     private init() {}
@@ -74,10 +82,10 @@ public final class TextCaptureService: Sendable {
         }
 
         // 2. Fallback to synthetic Cmd+C
-        if let clipboardText = await getSelectionViaClipboard(), !clipboardText.isEmpty,
-           !(Self.copiesLineWhenSelectionEmpty(bundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
-             && Self.looksLikeEmptySelectionLineCopy(clipboardText)) {
-            return CapturedSelection(text: clipboardText, bounds: nil, mouseLocation: mouseLoc, frontmostAppPID: frontmostPID)
+        if let clipboardText = await getSelectionViaClipboard(), !clipboardText.isEmpty {
+            let bundleID = frontmostPID.flatMap { NSRunningApplication(processIdentifier: $0)?.bundleIdentifier }
+            let ambiguous = Self.copiesLineWhenSelectionEmpty(bundleID: bundleID) && Self.looksLikeEmptySelectionLineCopy(clipboardText)
+            return CapturedSelection(text: clipboardText, bounds: nil, mouseLocation: mouseLoc, frontmostAppPID: frontmostPID, isAmbiguousLineCopy: ambiguous)
         }
 
         return nil
@@ -94,6 +102,8 @@ public final class TextCaptureService: Sendable {
         }
 
         if let original {
+            // A whole-line copy may mean nothing was selected; pasting would insert text at the caret.
+            if original.isAmbiguousLineCopy { return false }
             if original.viaAccessibility {
                 let current = await getSelectionViaAccessibility(pid: NSWorkspace.shared.frontmostApplication?.processIdentifier)?.0
                 if current != original.text { return false }
@@ -154,6 +164,8 @@ public final class TextCaptureService: Sendable {
         // Post simulated ⌘+V
         if !Self.skipSimulatePasteForTesting {
             await simulatePaste()
+        } else if let pause = Self.simulatePasteDelayForTesting {
+            try? await Task.sleep(nanoseconds: pause)
         }
         scheduleRestore()
 
@@ -292,7 +304,7 @@ public final class TextCaptureService: Sendable {
 
     private func getSelectionViaClipboard(timeout: TimeInterval = 0.15) async -> String? {
         let pasteboard = NSPasteboard.general
-        if currentRestoreTask != nil || savedOriginalItems != nil {
+        if hasPendingRestore {
             if let original = savedOriginalItems {
                 restorePasteboard(pasteboard, items: original)
                 savedOriginalItems = nil
