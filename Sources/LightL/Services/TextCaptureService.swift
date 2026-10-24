@@ -75,7 +75,8 @@ public final class TextCaptureService: Sendable {
 
         // 2. Fallback to synthetic Cmd+C
         if let clipboardText = await getSelectionViaClipboard(), !clipboardText.isEmpty,
-           !Self.looksLikeEmptySelectionLineCopy(clipboardText) {
+           !(Self.copiesLineWhenSelectionEmpty(bundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+             && Self.looksLikeEmptySelectionLineCopy(clipboardText)) {
             return CapturedSelection(text: clipboardText, bounds: nil, mouseLocation: mouseLoc, frontmostAppPID: frontmostPID)
         }
 
@@ -268,6 +269,15 @@ public final class TextCaptureService: Sendable {
         return (text, bounds)
     }
 
+    nonisolated static func copiesLineWhenSelectionEmpty(bundleID: String?) -> Bool {
+        guard let id = bundleID else { return false }
+        let editors: Set<String> = [
+            "com.microsoft.VSCode", "com.microsoft.VSCodeInsiders", "com.visualstudio.code.oss",
+            "com.todesktop.230313mzl4w4u92", "com.sublimetext.4", "com.sublimetext.3", "dev.zed.Zed"
+        ]
+        return editors.contains(id) || id.hasPrefix("com.jetbrains.")
+    }
+
     /// Editors such as VS Code and JetBrains copy the whole caret line plus a trailing newline when nothing is selected.
     nonisolated static func looksLikeEmptySelectionLineCopy(_ text: String) -> Bool {
         text.hasSuffix("\n") && text.filter { $0 == "\n" }.count == 1
@@ -282,7 +292,7 @@ public final class TextCaptureService: Sendable {
 
     private func getSelectionViaClipboard(timeout: TimeInterval = 0.15) async -> String? {
         let pasteboard = NSPasteboard.general
-        if currentRestoreTask != nil {
+        if currentRestoreTask != nil || savedOriginalItems != nil {
             if let original = savedOriginalItems {
                 restorePasteboard(pasteboard, items: original)
                 savedOriginalItems = nil

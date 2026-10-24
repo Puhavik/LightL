@@ -1263,6 +1263,14 @@ struct LightLTests {
         #expect(!TextCaptureService.looksLikeEmptySelectionLineCopy("a\nb"))
     }
 
+    @Test("Line-copy heuristic applies only to editors known to copy the caret line")
+    func editorsCopyingCaretLine() {
+        #expect(TextCaptureService.copiesLineWhenSelectionEmpty(bundleID: "com.microsoft.VSCode"))
+        #expect(TextCaptureService.copiesLineWhenSelectionEmpty(bundleID: "com.jetbrains.intellij"))
+        #expect(!TextCaptureService.copiesLineWhenSelectionEmpty(bundleID: "com.tinyspeck.slackmacgap"))
+        #expect(!TextCaptureService.copiesLineWhenSelectionEmpty(bundleID: nil))
+    }
+
     @Test("StreamGate renders the first chunk, drops chunks within 50ms and nothing after finish")
     @MainActor
     func streamGateThrottle() {
