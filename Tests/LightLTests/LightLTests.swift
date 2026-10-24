@@ -1365,6 +1365,14 @@ struct LightLTests {
         #expect(view?.canReplace == false)
     }
 
+    @Test("transient pasteboard items carry the clipboard-manager markers")
+    func transientItemMarkers() {
+        let item = TextCaptureService.makeTransientItem(text: "secret")
+        #expect(item.string(forType: .string) == "secret")
+        #expect(item.types.contains(NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")))
+        #expect(item.types.contains(NSPasteboard.PasteboardType("org.nspasteboard.transient")))
+    }
+
     @Test("Line-copy heuristic applies only to editors known to copy the caret line")
     func editorsCopyingCaretLine() {
         #expect(TextCaptureService.copiesLineWhenSelectionEmpty(bundleID: "com.microsoft.VSCode"))

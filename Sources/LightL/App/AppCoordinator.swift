@@ -435,7 +435,7 @@ public final class AppCoordinator {
                     // The capture may not be a real selection, so never paste into the document: hand the result over via the clipboard.
                     let pasteboard = NSPasteboard.general
                     pasteboard.clearContents()
-                    pasteboard.setString(corrected, forType: .string)
+                    pasteboard.writeObjects([TextCaptureService.makeTransientItem(text: corrected)])
                     self.statusBarController.triggerSuccessFlash()
                     return
                 }

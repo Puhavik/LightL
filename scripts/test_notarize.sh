@@ -53,4 +53,12 @@ if ls "$WORK"/AuthKey_* >/dev/null 2>&1; then
     fail "the private key must be removed after a failed run"
 fi
 
+write_xcrun Accepted
+mkdir -p "$WORK/tmp"
+env -u RUNNER_TEMP TMPDIR="$WORK/tmp" PATH="$WORK/bin:$PATH" APPLE_API_KEY_BASE64="$KEY" APPLE_API_KEY_ID=ABC123 APPLE_API_ISSUER_ID=issuer \
+    "$SCRIPT_DIR/notarize.sh" "$WORK/Fake.dmg" > "$WORK/out.log" 2>&1 || fail "run without RUNNER_TEMP must succeed"
+if [ -n "$(ls -A "$WORK/tmp")" ]; then
+    fail "the script must remove the temporary directory it created"
+fi
+
 echo "notarize.sh tests passed"

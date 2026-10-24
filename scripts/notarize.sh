@@ -8,9 +8,15 @@ if [ -z "${APPLE_API_KEY_BASE64:-}" ] || [ -z "${APPLE_API_KEY_ID:-}" ] || [ -z 
     exit 1
 fi
 
-WORK_DIR="${RUNNER_TEMP:-$(mktemp -d)}"
+OWN_WORK_DIR=0
+if [ -n "${RUNNER_TEMP:-}" ]; then
+    WORK_DIR="$RUNNER_TEMP"
+else
+    WORK_DIR="$(mktemp -d)"
+    OWN_WORK_DIR=1
+fi
 AUTH_KEY_PATH="${WORK_DIR}/AuthKey_${APPLE_API_KEY_ID}.p8"
-trap 'rm -f "$AUTH_KEY_PATH"' EXIT
+trap 'rm -f "$AUTH_KEY_PATH"; if [ "$OWN_WORK_DIR" = 1 ]; then rm -rf "$WORK_DIR"; fi' EXIT
 echo "$APPLE_API_KEY_BASE64" | base64 --decode > "$AUTH_KEY_PATH"
 
 SUBMIT_PATH="$TARGET"
