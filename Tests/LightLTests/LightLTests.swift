@@ -1254,6 +1254,18 @@ struct LightLTests {
         #expect(TruncatedStreamURLProtocol.requestCount == 2)
     }
 
+    @Test("StreamGate renders the first chunk, drops chunks within 50ms and nothing after finish")
+    @MainActor
+    func streamGateThrottle() {
+        let gate = StreamGate()
+        #expect(gate.shouldRender(at: 100.0))
+        #expect(!gate.shouldRender(at: 100.02))
+        #expect(gate.shouldRender(at: 100.06))
+        #expect(gate.shouldRender(at: 50.0))
+        gate.finished = true
+        #expect(!gate.shouldRender(at: 500.0))
+    }
+
     @Test("GeminiService streams consecutive SSE events in one request")
     func streamAccumulatesConsecutiveEvents() async throws {
         TruncatedStreamURLProtocol.requestCount = 0

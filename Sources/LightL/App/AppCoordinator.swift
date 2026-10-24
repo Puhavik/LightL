@@ -2,9 +2,17 @@ import Foundation
 import AppKit
 
 @MainActor
-private final class StreamGate {
+final class StreamGate {
+    static let minInterval: TimeInterval = 0.05
     var finished = false
-    var lastUpdate = Date.distantPast
+    private var lastRender: TimeInterval?
+
+    func shouldRender(at now: TimeInterval = ProcessInfo.processInfo.systemUptime) -> Bool {
+        guard !finished else { return false }
+        if let last = lastRender, now - last < Self.minInterval, now >= last { return false }
+        lastRender = now
+        return true
+    }
 }
 
 @MainActor
@@ -203,10 +211,7 @@ public final class AppCoordinator {
                     model: modelId,
                     onChunk: { [weak self] partialText in
                         Task { @MainActor [weak self] in
-                            guard let self = self, self.currentTranslateTaskId == taskId, !Task.isCancelled, !gate.finished else { return }
-                            let now = Date()
-                            guard now.timeIntervalSince(gate.lastUpdate) >= 0.05 else { return }
-                            gate.lastUpdate = now
+                            guard let self = self, self.currentTranslateTaskId == taskId, !Task.isCancelled, gate.shouldRender() else { return }
                             self.translationPanel.updateTranslation(
                                 originalText: originalText,
                                 translatedText: partialText,
