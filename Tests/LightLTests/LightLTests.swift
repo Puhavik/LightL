@@ -1290,9 +1290,11 @@ struct LightLTests {
         #expect(TextCaptureService.shared.hasPendingRestoreTaskForTesting == false)
         #expect(TextCaptureService.shared.hasPendingRestore == true)
         _ = await task.value
-        while TextCaptureService.shared.hasPendingRestore {
+        let deadline = Date().addingTimeInterval(2.0)
+        while TextCaptureService.shared.hasPendingRestore && Date() < deadline {
             try await Task.sleep(nanoseconds: 30_000_000)
         }
+        #expect(TextCaptureService.shared.hasPendingRestore == false)
     }
 
     @Test("Replace is refused for an ambiguous whole-line clipboard capture")

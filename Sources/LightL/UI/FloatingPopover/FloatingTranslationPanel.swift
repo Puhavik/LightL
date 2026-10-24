@@ -6,6 +6,7 @@ import Carbon
 @MainActor
 public final class FloatingTranslationPanel: NSPanel {
     public var onDismiss: (() -> Void)?
+    public var canReplace = true
 
     private var clickMonitor: Any?
     private var escGlobalMonitor: Any?
@@ -148,6 +149,7 @@ public final class FloatingTranslationPanel: NSPanel {
             isLoading: isLoading,
             isStreaming: isStreaming,
             errorMessage: errorMessage,
+            canReplace: canReplace,
             targetLanguage: targetLanguage,
             onCopy: onCopy,
             onReplace: { [weak self] in

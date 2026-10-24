@@ -192,6 +192,8 @@ public final class AppCoordinator {
                 location = .point(selection.mouseLocation)
             }
 
+            self.translationPanel.canReplace = !selection.isAmbiguousLineCopy
+
             // Show floating panel in loading state
             self.translationPanel.show(
                 originalText: originalText,
@@ -335,6 +337,13 @@ public final class AppCoordinator {
             }
 
             guard !Task.isCancelled && self.currentRewriteTaskId == taskId else { return }
+
+            if selection.isAmbiguousLineCopy {
+                self.statusBarController.triggerErrorBlink(
+                    message: L10n.tr(ru: "Выделите текст явно: сейчас скопирована целая строка", en: "Select the text explicitly: the whole line was copied")
+                )
+                return
+            }
 
             let originalText = selection.text
             let mode = self.settings.rewriteMode

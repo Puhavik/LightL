@@ -7,6 +7,7 @@ public struct TranslationContentView: View {
     public let isLoading: Bool
     public let isStreaming: Bool
     public let errorMessage: String?
+    public let canReplace: Bool
     public let targetLanguage: LanguageModel
     public let onCopy: () -> Void
     public let onReplace: () -> Void
@@ -21,11 +22,13 @@ public struct TranslationContentView: View {
         isLoading: Bool,
         isStreaming: Bool = false,
         errorMessage: String?,
+        canReplace: Bool = true,
         targetLanguage: LanguageModel,
         onCopy: @escaping () -> Void,
         onReplace: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
+        self.canReplace = canReplace
         self.originalText = originalText
         self.translatedText = translatedText
         self.isLoading = isLoading
@@ -172,6 +175,7 @@ public struct TranslationContentView: View {
                 }
                 .buttonStyle(MacOS27GlassPillButtonStyle(isProminent: false))
 
+                if canReplace {
                 Button(action: onReplace) {
                     HStack(spacing: 5) {
                         if isStreaming {
@@ -188,6 +192,7 @@ public struct TranslationContentView: View {
                 .buttonStyle(MacOS27GlassPillButtonStyle(isProminent: true))
                 .disabled(isLoading || isStreaming)
                 .opacity((isLoading || isStreaming) ? 0.6 : 1.0)
+                }
             }
 
             Spacer()
