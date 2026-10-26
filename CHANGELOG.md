@@ -6,6 +6,12 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-10-26
+
+### Fixed
+- Rewrite in Telegram no longer inserts the corrected text twice: Telegram reports an Accessibility error while still applying the replacement, which triggered a second paste.
+- Rewrite in Claude (and other Chromium-based apps) now takes effect: these apps report a successful Accessibility replacement without changing the text, so the paste fallback is used when the field value did not change.
+
 ## [1.3.0] - 2026-10-24
 
 ### Changed
