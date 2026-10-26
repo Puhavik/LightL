@@ -217,8 +217,25 @@ public final class TextCaptureService: Sendable {
             return false
         }
 
+        let before = axValueString(element)
         let setStatus = AXUIElementSetAttributeValue(element, kAXSelectedTextAttribute as CFString, newText as CFTypeRef)
-        return setStatus == .success
+        guard let before else { return setStatus == .success }
+        for _ in 0..<10 {
+            if didAXValueChange(before: before, after: axValueString(element)) { return true }
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        return false
+    }
+
+    nonisolated private static func axValueString(_ element: AXUIElement) -> String? {
+        var value: AnyObject?
+        guard AXUIElementCopyAttributeValue(element, kAXValueAttribute as CFString, &value) == .success else { return nil }
+        return value as? String
+    }
+
+    nonisolated static func didAXValueChange(before: String, after: String?) -> Bool {
+        guard let after else { return false }
+        return after != before
     }
 
     // MARK: - Accessibility Helpers

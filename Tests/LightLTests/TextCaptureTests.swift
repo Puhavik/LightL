@@ -340,6 +340,13 @@ extension LightLTests {
         #expect(!TextCaptureService.copiesLineWhenSelectionEmpty(bundleID: nil))
     }
 
+    @Test("A failed Accessibility set counts as applied only when the field value changed")
+    func axValueChangeDetection() {
+        #expect(TextCaptureService.didAXValueChange(before: "a", after: "b"))
+        #expect(!TextCaptureService.didAXValueChange(before: "a", after: "a"))
+        #expect(!TextCaptureService.didAXValueChange(before: "a", after: nil))
+    }
+
     @Test("StreamGate renders the first chunk, drops chunks within 50ms and nothing after finish")
     @MainActor
     func streamGateThrottle() {
