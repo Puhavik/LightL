@@ -74,30 +74,18 @@ extension LightLTests {
         #expect(controller.currentWindow == nil)
     }
 
-    @Test("StatusBarController menu suppresses Accessibility item when permission is granted")
+    @Test("StatusBarController popover lifecycle and visual state indicators")
     @MainActor
-    func statusBarMenuAccessibilityItem() {
-        let isGranted = TextCaptureService.isAccessibilityGranted(prompt: false)
+    func statusBarPopoverAndVisualStates() {
         let controller = StatusBarController()
-        controller.rebuildMenu()
-
-        // Test menuNeedsUpdate
-        let menu = NSMenu()
-        controller.menuNeedsUpdate(menu)
-        let titles = menu.items.map(\.title)
-
-        // Test version badge in header
-        let firstItem = menu.items.first
-        #expect(firstItem?.title == "LightL AI")
-        #expect(firstItem?.badge != nil)
-        #expect(firstItem?.badge?.stringValue == StatusBarController.appVersion)
-
-        if isGranted {
-            #expect(!titles.contains { $0.contains("Accessibility") || $0.contains("Универсальный доступ") })
-        } else {
-            #expect(titles.contains { $0.contains("Accessibility") || $0.contains("Универсальный доступ") })
-        }
-
+        #expect(!StatusBarController.appVersion.isEmpty)
+        #expect(!controller.isPopoverVisible)
+        controller.setLoading(true)
+        controller.setLoading(false)
+        controller.triggerSuccessFlash()
+        controller.triggerErrorBlink(message: "Test failure")
+        controller.togglePopover()
+        controller.closePopover()
         controller.destroy()
     }
 

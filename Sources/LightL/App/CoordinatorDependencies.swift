@@ -7,7 +7,7 @@ protocol TextCapturing: AnyObject {
     func replaceSelection(with newText: String, verifying original: CapturedSelection?) async -> Bool
 }
 
-protocol TextTransforming: Sendable {
+public protocol TextTransforming: Sendable {
     func prewarm() async
     func translate(
         text: String,

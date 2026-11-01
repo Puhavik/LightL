@@ -1,12 +1,22 @@
 import Foundation
 import AppKit
+import SwiftUI
 
 @MainActor
-public final class StatusBarController: NSObject, NSMenuDelegate {
+public final class StatusBarController: NSObject, NSPopoverDelegate {
     private var statusItem: NSStatusItem?
     private var activeAnimationTask: Task<Void, Never>?
-    private var settingsObserver: (any NSObjectProtocol)?
-    public private(set) var isMenuVisible = false
+    public private(set) var popover: NSPopover?
+    public let viewModel: StatusBarPopoverViewModel
+    private var popoverClosedAt: TimeInterval = 0
+
+    public var isPopoverVisible: Bool {
+        popover?.isShown ?? false
+    }
+
+    public var isMenuVisible: Bool {
+        isPopoverVisible
+    }
 
     private let errorIconName = "exclamationmark.triangle.fill"
     private let loadingIconName = "arrow.triangle.2.circlepath"
@@ -30,8 +40,6 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
             img.isTemplate = true
             return img
         }
-        // Bundle.module traps if the SwiftPM resource bundle cannot be opened (e.g. flat bundle built on CI),
-        // so only touch it outside a packaged .app (swift run / swift test).
         #if SWIFT_PACKAGE
         if Bundle.main.bundleURL.pathExtension != "app", let img = Bundle.module.image(forResource: "MenuBarIcon") {
             img.isTemplate = true
@@ -83,10 +91,10 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
 
     public var onOpenSettings: (() -> Void)?
 
-    public override init() {
+    public init(viewModel: StatusBarPopoverViewModel = StatusBarPopoverViewModel()) {
+        self.viewModel = viewModel
         super.init()
         setupStatusItem()
-        observeSettings()
     }
 
     private func setupStatusItem() {
@@ -95,179 +103,83 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
             button.image = normalIcon
             button.imagePosition = .imageOnly
             button.toolTip = L10n.tr(ru: "LightL — AI переводчик и редактор", en: "LightL — AI Translator & Editor")
+            button.target = self
+            button.action = #selector(statusBarButtonClicked(_:))
         }
-        rebuildMenu()
     }
 
-    private func observeSettings() {
-        if let existing = settingsObserver {
-            NotificationCenter.default.removeObserver(existing)
-        }
-        settingsObserver = NotificationCenter.default.addObserver(
-            forName: AppSettings.didChangeNotification,
-            object: nil,
-            queue: .main
-        ) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self = self, !self.isMenuVisible else { return }
-                self.rebuildMenu()
+    @objc private func statusBarButtonClicked(_ sender: AnyObject?) {
+        togglePopover()
+    }
+
+    public func togglePopover() {
+        guard let button = statusItem?.button else { return }
+        if let popover = popover, popover.isShown {
+            closePopover()
+        } else {
+            let now = ProcessInfo.processInfo.systemUptime
+            if now - popoverClosedAt < 0.15 {
+                return
             }
+            showPopover(relativeTo: button)
         }
+    }
+
+    public func showPopover(relativeTo button: NSStatusBarButton) {
+        let pop = ensurePopover()
+        pop.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        if let window = pop.contentViewController?.view.window {
+            window.makeKey()
+        }
+        NSApp.activate(ignoringOtherApps: true)
+    }
+
+    public func closePopover() {
+        popover?.performClose(nil)
+    }
+
+    private func ensurePopover() -> NSPopover {
+        if let existing = popover {
+            return existing
+        }
+        let pop = NSPopover()
+        pop.behavior = .transient
+        pop.animates = true
+        pop.contentSize = NSSize(width: 340, height: 360)
+        pop.delegate = self
+        let view = StatusBarPopoverView(
+            viewModel: viewModel,
+            onOpenSettings: { [weak self] in
+                self?.closePopover()
+                if let onOpenSettings = self?.onOpenSettings {
+                    onOpenSettings()
+                } else {
+                    SettingsWindowController.shared.show()
+                }
+            },
+            onClose: { [weak self] in
+                self?.closePopover()
+            }
+        )
+        let hostingController = NSHostingController(rootView: view)
+        hostingController.view.frame.size = NSSize(width: 340, height: 360)
+        pop.contentViewController = hostingController
+        self.popover = pop
+        return pop
+    }
+
+    public func popoverDidClose(_ notification: Notification) {
+        popoverClosedAt = ProcessInfo.processInfo.systemUptime
     }
 
     public func destroy() {
         stopActiveAnimation()
-        if let obs = settingsObserver {
-            NotificationCenter.default.removeObserver(obs)
-            settingsObserver = nil
-        }
+        closePopover()
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             statusItem = nil
         }
     }
-
-    public func rebuildMenu() {
-        guard !isMenuVisible else { return }
-        let menu = statusItem?.menu ?? NSMenu()
-        menu.autoenablesItems = false
-        menu.delegate = self
-        populateMenu(menu)
-        statusItem?.menu = menu
-    }
-
-    public func menuNeedsUpdate(_ menu: NSMenu) {
-        populateMenu(menu)
-    }
-
-    public func menuWillOpen(_ menu: NSMenu) {
-        isMenuVisible = true
-    }
-
-    public func menuDidClose(_ menu: NSMenu) {
-        isMenuVisible = false
-    }
-
-    private func populateMenu(_ menu: NSMenu) {
-        menu.removeAllItems()
-
-        // Title item with version in top-right corner
-        let titleItem = NSMenuItem(title: "LightL AI", action: nil, keyEquivalent: "")
-        titleItem.isEnabled = false
-        if let font = NSFont.boldSystemFont(ofSize: 12) as NSFont? {
-            titleItem.attributedTitle = NSAttributedString(
-                string: "LightL AI",
-                attributes: [.font: font, .foregroundColor: NSColor.secondaryLabelColor]
-            )
-        }
-        titleItem.badge = NSMenuItemBadge(string: Self.appVersion)
-        titleItem.toolTip = L10n.tr(ru: "Версия LightL: \(Self.appVersion)", en: "LightL Version: \(Self.appVersion)")
-        menu.addItem(titleItem)
-
-        // API Status indicator
-        let hasKey = !AppSettings.shared.geminiApiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        let apiStatusItem = NSMenuItem(
-            title: hasKey
-                ? L10n.tr(ru: "● API Gemini: Настроен", en: "● Gemini API: Ready")
-                : L10n.tr(ru: "○ API Gemini: Введите ключ", en: "○ Gemini API: Enter Key"),
-            action: #selector(menuOpenSettings),
-            keyEquivalent: ""
-        )
-        apiStatusItem.target = self
-        menu.addItem(apiStatusItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Target language submenu
-        let langMenu = NSMenu()
-        let currentLang = AppSettings.shared.targetLanguageCode
-        for lang in LanguageModel.supportedLanguages {
-            let item = NSMenuItem(title: "\(lang.localizedName) (\(lang.nativeName))", action: #selector(changeLanguageAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = lang.code
-            item.state = (lang.code == currentLang) ? .on : .off
-            langMenu.addItem(item)
-        }
-        let targetLangItem = NSMenuItem(
-            title: L10n.tr(
-                ru: "Язык перевода: \(AppSettings.shared.targetLanguage.localizedName)",
-                en: "Translation: \(AppSettings.shared.targetLanguage.localizedName)"
-            ),
-            action: nil,
-            keyEquivalent: ""
-        )
-        targetLangItem.submenu = langMenu
-        menu.addItem(targetLangItem)
-
-        // Rewrite mode submenu
-        let modeMenu = NSMenu()
-        let currentMode = AppSettings.shared.rewriteMode
-        for mode in RewriteMode.allCases {
-            let item = NSMenuItem(title: mode.title, action: #selector(changeModeAction(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = mode
-            item.state = (mode == currentMode) ? .on : .off
-            modeMenu.addItem(item)
-        }
-        let modeItem = NSMenuItem(
-            title: L10n.tr(
-                ru: "Режим замены: \(currentMode.title)",
-                en: "Replacement: \(currentMode.title)"
-            ),
-            action: nil,
-            keyEquivalent: ""
-        )
-        modeItem.submenu = modeMenu
-        menu.addItem(modeItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Accessibility status (shown ONLY when access is NOT granted)
-        let isAxGranted = TextCaptureService.isAccessibilityGranted(prompt: false)
-        if !isAxGranted {
-            let axItem = NSMenuItem(
-                title: L10n.tr(ru: "⚠ Требуется Универсальный доступ", en: "⚠ Accessibility Required"),
-                action: #selector(openAccessibilityAction),
-                keyEquivalent: ""
-            )
-            axItem.target = self
-            menu.addItem(axItem)
-        }
-
-        // Settings
-        let settingsItem = NSMenuItem(
-            title: L10n.tr(ru: "Настройки...", en: "Settings..."),
-            action: #selector(menuOpenSettings),
-            keyEquivalent: ","
-        )
-        settingsItem.target = self
-        menu.addItem(settingsItem)
-
-        let loginItem = NSMenuItem(
-            title: L10n.tr(ru: "Запускать при входе в систему", en: "Launch at Login"),
-            action: #selector(toggleLaunchAtLoginAction),
-            keyEquivalent: ""
-        )
-        loginItem.target = self
-        loginItem.state = LaunchAtLogin.isEnabled ? .on : (LaunchAtLogin.needsApproval ? .mixed : .off)
-        if LaunchAtLogin.needsApproval {
-            loginItem.toolTip = L10n.tr(ru: "Требуется подтверждение в Системных настройках → Объекты входа", en: "Needs approval in System Settings → Login Items")
-        }
-        menu.addItem(loginItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        // Quit
-        let quitItem = NSMenuItem(
-            title: L10n.tr(ru: "Завершить LightL", en: "Quit LightL"),
-            action: #selector(quitAction),
-            keyEquivalent: "q"
-        )
-        quitItem.target = self
-        menu.addItem(quitItem)
-    }
-
-    // MARK: - Status Visual States
 
     public func setLoading(_ loading: Bool) {
         guard let button = statusItem?.button else { return }
@@ -284,7 +196,6 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
         }
     }
 
-    /// Triggers the blinking error animation in the Menu Bar icon
     public func triggerErrorBlink(message: String) {
         guard let button = statusItem?.button else { return }
         stopActiveAnimation()
@@ -336,40 +247,5 @@ public final class StatusBarController: NSObject, NSMenuDelegate {
         activeAnimationTask?.cancel()
         activeAnimationTask = nil
         resetNormalIcon()
-    }
-
-    // MARK: - Actions
-
-    @objc private func menuOpenSettings() {
-        onOpenSettings?()
-    }
-
-    @objc private func toggleLaunchAtLoginAction() {
-        if LaunchAtLogin.needsApproval {
-            LaunchAtLogin.openSystemSettings()
-        } else {
-            LaunchAtLogin.setEnabled(!LaunchAtLogin.isEnabled)
-        }
-    }
-
-    @objc private func changeLanguageAction(_ sender: NSMenuItem) {
-        if let code = sender.representedObject as? String {
-            AppSettings.shared.targetLanguageCode = code
-        }
-    }
-
-    @objc private func changeModeAction(_ sender: NSMenuItem) {
-        if let mode = sender.representedObject as? RewriteMode {
-            AppSettings.shared.rewriteMode = mode
-        }
-    }
-
-    @objc private func openAccessibilityAction() {
-        _ = TextCaptureService.isAccessibilityGranted(prompt: true)
-        TextCaptureService.openAccessibilitySettings()
-    }
-
-    @objc private func quitAction() {
-        NSApplication.shared.terminate(nil)
     }
 }

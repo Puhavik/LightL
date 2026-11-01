@@ -104,9 +104,14 @@ public struct SettingsView: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 28, height: 28)
 
-                Text("LightL")
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("LightL")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundColor(.primary)
+                    Text(StatusBarController.appVersion)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
             }
             .frame(height: 32)
             .padding(.horizontal, 14)
@@ -177,6 +182,15 @@ public struct SettingsView: View {
                     : L10n.tr(ru: "API подключен", en: "API Connected"))
                     .font(.system(size: 11))
                     .foregroundColor(.secondary)
+                Spacer()
+                Button(action: {
+                    NSApplication.shared.terminate(nil)
+                }) {
+                    Text(L10n.tr(ru: "Выход", en: "Quit"))
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
             }
             .padding(14)
         }
