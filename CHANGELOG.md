@@ -6,7 +6,7 @@ All notable user-facing features, improvements, and fixes for LightL.
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-11-01
+## [1.4.1] - 2026-11-01
 
 ### Added
 - Clicking the menu bar icon opens a small translator popover: type text on top, get the translation below. The source language is detected automatically and the target language is remembered until you change it.

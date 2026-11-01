@@ -49,6 +49,14 @@ final class MockTransformer: TextTransforming, @unchecked Sendable {
     }
 }
 
+@MainActor
+func waitUntil(_ condition: () -> Bool) async throws {
+    let deadline = ContinuousClock.now + .seconds(5)
+    while !condition() && ContinuousClock.now < deadline {
+        try await Task.sleep(nanoseconds: 10_000_000)
+    }
+}
+
 @Suite("StatusBarPopover Tests")
 struct StatusBarPopoverTests {
     @Test("Status dot derivation matches expected state colors and tooltips")
@@ -137,7 +145,7 @@ struct StatusBarPopoverTests {
         vm.inputText = "Hello world"
         vm.onInputTextChanged()
 
-        try await Task.sleep(nanoseconds: 80_000_000)
+        try await waitUntil { vm.outputText == "Bonjour le monde" && !vm.isTranslating }
 
         #expect(mock.translateCalls == 1)
         #expect(mock.lastText == "Hello world")
@@ -170,7 +178,7 @@ struct StatusBarPopoverTests {
 
         #expect(settings.targetLanguageCode == "de")
 
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await waitUntil { vm.outputText == "Guten Tag" }
 
         #expect(mock.translateCalls == 1)
         #expect(mock.lastTarget?.code == "de")
@@ -196,7 +204,7 @@ struct StatusBarPopoverTests {
         vm.inputText = "Sample text"
         vm.onInputTextChanged()
 
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await waitUntil { vm.errorMessage != nil }
 
         #expect(mock.translateCalls == 0)
         #expect(vm.errorMessage != nil)
@@ -228,7 +236,7 @@ struct StatusBarPopoverTests {
         vm.inputText = "Translate this"
         vm.onInputTextChanged()
 
-        try await Task.sleep(nanoseconds: 50_000_000)
+        try await waitUntil { vm.errorMessage != nil }
 
         #expect(vm.errorMessage == "Rate limit exceeded")
         #expect(vm.statusState.color == .orange)
